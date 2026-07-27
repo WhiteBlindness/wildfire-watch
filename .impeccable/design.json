@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-27T22:30:00Z",
+  "title": "Design System: WildfireWatch",
+  "extensions": {
+    "colorMeta": {
+      "alert-red": { "role": "primary", "displayName": "Alert Red", "canonical": "#ef4444", "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#f87171", "#fecaca"] },
+      "critical-crimson": { "role": "primary", "displayName": "Critical Crimson", "canonical": "#b91c1c", "tonalRamp": ["#2c0a0a", "#450a0a", "#641616", "#7f1d1d", "#991b1b", "#b91c1c", "#d94040", "#f2a3a3"] },
+      "amber-watch": { "role": "primary", "displayName": "Amber Watch", "canonical": "#f5c451", "tonalRamp": ["#4a3607", "#78530b", "#a5730f", "#d19317", "#eeac2c", "#f5c451", "#f9d685", "#fceec0"] },
+      "signal-amber": { "role": "primary", "displayName": "Signal Amber", "canonical": "#f59e0b", "tonalRamp": ["#452c02", "#78500a", "#a06d0d", "#c8890f", "#e9a512", "#f59e0b", "#f9bb52", "#fcd999"] },
+      "flare-red": { "role": "primary", "displayName": "Flare Red", "canonical": "#ff3b3b", "tonalRamp": ["#3d0909", "#661010", "#901818", "#c02222", "#ea2d2d", "#ff3b3b", "#ff7a7a", "#ffbdbd"] },
+      "resolved-emerald": { "role": "tertiary", "displayName": "Resolved Emerald", "canonical": "#10b981", "tonalRamp": ["#022c22", "#064e3b", "#065f46", "#047857", "#059669", "#10b981", "#6ee7b7", "#d1fae5"] },
+      "void-black": { "role": "neutral", "displayName": "Void Black", "canonical": "#0a0d12", "tonalRamp": ["#000000", "#0a0d12", "#12161d", "#1a1f28", "#262c37", "#3b4252", "#5c6577", "#8a93a3"] },
+      "deep-airspace": { "role": "neutral", "displayName": "Deep Airspace", "canonical": "#0f172a", "tonalRamp": ["#000000", "#0f172a", "#1e293b", "#334155", "#475569", "#64748b", "#94a3b8", "#cbd5e1"] },
+      "instrument-panel": { "role": "neutral", "displayName": "Instrument Panel", "canonical": "#12161d", "tonalRamp": ["#040506", "#12161d", "#1c222c", "#2a323f", "#3d4a5c", "#5a6b82", "#8797ac", "#c2ccd9"] },
+      "panel-recess": { "role": "neutral", "displayName": "Panel Recess", "canonical": "#1a1f28", "tonalRamp": ["#06080a", "#1a1f28", "#262c37", "#343c49", "#48525f", "#69737f", "#98a0a9", "#cdd2d7"] },
+      "hairline-steel": { "role": "neutral", "displayName": "Hairline Steel", "canonical": "#262c37", "tonalRamp": ["#0a0c0f", "#181c22", "#262c37", "#3a4250", "#525c6c", "#727e91", "#9fa8b6", "#d3d8de"] },
+      "signal-white": { "role": "neutral", "displayName": "Signal White", "canonical": "#e8eaed", "tonalRamp": ["#3a3d42", "#5c6066", "#82868c", "#a7abb0", "#c5c9cd", "#e8eaed", "#f2f3f5", "#fbfbfc"] },
+      "daylight-bg": { "role": "neutral", "displayName": "Daylight Background", "canonical": "#f5f6f7", "tonalRamp": ["#c9cbce", "#d8dbde", "#e6e8ea", "#f0f2f3", "#f5f6f7", "#fafafb", "#fcfcfd", "#ffffff"] },
+      "daylight-surface": { "role": "neutral", "displayName": "Daylight Surface", "canonical": "#ffffff", "tonalRamp": ["#d0d0d0", "#dedede", "#e8e8e8", "#f0f0f0", "#f6f6f6", "#fafafa", "#fdfdfd", "#ffffff"] },
+      "daylight-surface-muted": { "role": "neutral", "displayName": "Daylight Surface Muted", "canonical": "#eceef1", "tonalRamp": ["#c2c6cb", "#d0d4d9", "#dcdfe3", "#e4e7ea", "#eceef1", "#f2f3f5", "#f7f8f9", "#fbfbfc"] },
+      "daylight-border": { "role": "neutral", "displayName": "Daylight Border", "canonical": "#d8dbe0", "tonalRamp": ["#a9adb5", "#bbbfc6", "#c9ccd3", "#d2d6dc", "#d8dbe0", "#e2e4e8", "#ebedef", "#f4f5f6"] },
+      "daylight-ink": { "role": "neutral", "displayName": "Daylight Ink", "canonical": "#12151a", "tonalRamp": ["#000000", "#12151a", "#1e222a", "#2e333c", "#454b56", "#656d79", "#8f96a1", "#c3c8ce"] }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Title", "purpose": "Fire name in the detail-panel header; the single largest text on the page." },
+      "body": { "displayName": "Body", "purpose": "Stat values, panel copy, chart tooltips, badge text." },
+      "label": { "displayName": "Label", "purpose": "Uppercase section eyebrows (\"MEIOS NO TERRENO\", \"SEVERIDADE\") and the ad-slot micro-label." }
+    },
+    "shadows": [
+      { "name": "chrome-lift", "value": "shadow-lg (Tailwind default)", "purpose": "Secondary lift on floating chrome (top bar, legend) so edges separate from busy map content; not the primary depth cue." },
+      { "name": "panel-lift", "value": "shadow-2xl (Tailwind default)", "purpose": "Secondary lift on the detail panel; paired with glass translucency, not a replacement for it." },
+      { "name": "heatmap-glow-underlay", "value": "heatmap-radius: 55, heatmap-opacity: 0.45, heatmap-intensity: 0.9", "purpose": "Wide, soft glow pass beneath the sharp heatmap core — the map's real depth/urgency cue, not a shadow." },
+      { "name": "polygon-line-glow", "value": "line-width: 6, line-blur: 4, line-opacity: 0.5", "purpose": "Blurred glow line under the solid burned-area polygon stroke." }
+    ],
+    "motion": [
+      { "name": "panel-slide", "value": "transition-transform duration-300 ease-out", "purpose": "Detail panel slide-in/out (translate-y on mobile, translate-x on desktop)." },
+      { "name": "toggle-slide", "value": "transition-transform (implicit, ~150-200ms)", "purpose": "Theme-toggle thumb sliding between light/dark positions." }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "768px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Status Badge (Active)",
+      "kind": "chip",
+      "refersTo": "badge-active",
+      "description": "Full-pill status indicator reading \"Ativo\"; always paired with a neutral severity pill beside it.",
+      "html": "<span class=\"ds-badge ds-badge-active\">Ativo</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 9999px; font-size: 0.6875rem; font-weight: 500; } .ds-badge-active { background: rgba(239,68,68,0.15); color: #ef4444; box-shadow: inset 0 0 0 1px rgba(239,68,68,0.4); }"
+    },
+    {
+      "name": "Status Badge (Contained)",
+      "kind": "chip",
+      "refersTo": "badge-contained",
+      "description": "Full-pill status indicator reading \"Dominado\".",
+      "html": "<span class=\"ds-badge ds-badge-contained\">Dominado</span>",
+      "css": ".ds-badge-contained { background: rgba(245,158,11,0.15); color: #f59e0b; box-shadow: inset 0 0 0 1px rgba(245,158,11,0.4); border-radius: 9999px; padding: 4px 10px; font-size: 0.6875rem; font-weight: 500; display: inline-flex; align-items: center; }"
+    },
+    {
+      "name": "Status Badge (Extinguished)",
+      "kind": "chip",
+      "refersTo": "badge-extinguished",
+      "description": "Full-pill status indicator reading \"Extinto\" — the one place Resolved Emerald appears.",
+      "html": "<span class=\"ds-badge ds-badge-extinguished\">Extinto</span>",
+      "css": ".ds-badge-extinguished { background: rgba(16,185,129,0.15); color: #10b981; box-shadow: inset 0 0 0 1px rgba(16,185,129,0.4); border-radius: 9999px; padding: 4px 10px; font-size: 0.6875rem; font-weight: 500; display: inline-flex; align-items: center; }"
+    },
+    {
+      "name": "Theme Toggle",
+      "kind": "custom",
+      "description": "Full-round track with a sliding circular thumb carrying a sun/moon SVG icon; the only interactive control in the top bar.",
+      "html": "<button class=\"ds-toggle\" role=\"switch\" aria-checked=\"true\"><span class=\"ds-toggle-thumb\"></span></button>",
+      "css": ".ds-toggle { position: relative; height: 36px; width: 64px; border-radius: 9999px; border: 1px solid #262c37; background: #1a1f28; } .ds-toggle-thumb { position: absolute; top: 4px; left: 4px; height: 28px; width: 28px; border-radius: 9999px; background: rgba(232,234,237,0.9); color: #0a0d12; transform: translateX(28px); transition: transform 0.2s ease; display: flex; align-items: center; justify-content: center; }"
+    },
+    {
+      "name": "Ad Slot",
+      "kind": "custom",
+      "refersTo": "ad-slot",
+      "description": "Deliberately recessive placeholder ad unit — dashed border, muted fill, centered uppercase micro-label. Never styled like a data card.",
+      "html": "<div class=\"ds-adslot\">Publicidade &middot; 300&times;250</div>",
+      "css": ".ds-adslot { display: flex; align-items: center; justify-content: center; border: 1px dashed #262c37; background: rgba(26,31,40,0.6); border-radius: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: rgba(232,234,237,0.4); width: 100%; max-width: 300px; height: 250px; margin: 0 auto; }"
+    },
+    {
+      "name": "Detail Panel Stat Card",
+      "kind": "card",
+      "description": "Recessed 2-column stat grid used for the \"Meios no terreno\" (forces) block inside the detail panel.",
+      "html": "<div class=\"ds-stat-card\"><div class=\"ds-stat-label\">Bombeiros</div><div class=\"ds-stat-value\">1060</div></div>",
+      "css": ".ds-stat-card { border-radius: 8px; border: 1px solid #262c37; background: rgba(26,31,40,0.5); padding: 12px; } .ds-stat-label { font-size: 0.75rem; color: rgba(232,234,237,0.5); } .ds-stat-value { font-size: 0.875rem; font-weight: 500; color: #e8eaed; }"
+    },
+    {
+      "name": "Map Fire Marker",
+      "kind": "custom",
+      "description": "MapLibre circle layer representing a fire's origin point; radius and stroke both grow on selection.",
+      "html": "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"9\" fill=\"#ef4444\" stroke=\"#ffffff\" stroke-width=\"2.5\"/></svg>",
+      "css": ""
+    }
+  ],
+  "narrative": {
+    "northStar": "Mission Control at Midnight",
+    "overview": "WildfireWatch reads like the main display wall of a night-shift operations room: a near-black world map as the permanent canvas, glowing hotspots as the only warm light source, and every floating panel a piece of glass instrumentation hovering over that canvas rather than a page of content sitting beside it. The dark theme is the primary, intentional world — light mode exists as a daylight-shift variant, not the default identity. Nothing on screen competes with the fire data for attention. Chrome (top bar, legend, side panel, ad slots) is deliberately quiet — translucent, blurred, low-contrast — so the map's heatmap glow and burned-area borders are always the brightest, most saturated things visible. Ad slots are the most visually recessive element in the system on purpose: dashed borders, muted fill, uppercase micro-label. They must never be mistaken for data. Component language is tactile and precise: crisp pill shapes, confident status-color contrast, glass surfaces that behave like real HUD panels built for fast scanning under pressure, not a soft consumer-app feel.",
+    "keyCharacteristics": [
+      "Dark-first: void-black canvas, glass-panel chrome, glow-driven depth instead of drop shadows.",
+      "One color language for meaning (the four-step severity ramp) — never introduce a second accent hue for decoration.",
+      "Floating, translucent surfaces (top bar, legend, side panel) read as instruments layered over the map, not as a separate page.",
+      "Ad slots are structurally and visually separated from data at every density."
+    ],
+    "rules": [
+      { "name": "The One Ramp Rule", "body": "All status/severity meaning flows through exactly one four-step ramp (Amber Watch → Signal Amber → Alert Red → Critical Crimson) plus the single Resolved Emerald exception. No other hue is ever added for “visual interest.”", "section": "colors" },
+      { "name": "The Uppercase Eyebrow Rule", "body": "Any label introducing a data group is uppercase, tracked, and rendered at ~50% text opacity relative to body copy — it organizes without competing.", "section": "typography" },
+      { "name": "The Glow-Over-Shadow Rule", "body": "When something needs to feel “elevated” or “urgent,” reach for glow (blur + saturated color) before reaching for a drop shadow. Shadows are structural (separate this panel from that map); glow is meaningful (this is where the fire is).", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep dark as the default, primary world; treat light mode as a secondary daylight-shift variant, not co-equal.",
+      "Do route all status/severity meaning through the One Ramp (plus Resolved Emerald) — never invent a new hue for a new state.",
+      "Do use glass (blur + translucency) for chrome that floats over the map; reach for glow (blur + saturated color), not drop shadow, when something needs to feel urgent or elevated.",
+      "Do keep ad slots visually recessive (dashed border, muted fill, micro-label) and structurally separate from data cards at every breakpoint.",
+      "Do show status and severity as a paired badge, never status alone."
+    ],
+    "donts": [
+      "Don't let mock/synthetic data look or read as indistinguishable from real live data — no fabricated \"LIVE\" indicators or real-time-looking timestamps beyond what the mock generator actually produces.",
+      "Don't add a second decorative accent color outside the severity ramp.",
+      "Don't make drop shadow the primary elevation cue on the map or its overlays — glow and blur carry that job here.",
+      "Don't give an ad slot the same card treatment (solid fill, solid border, drop shadow) as a data card; the dashed/muted treatment is the whole point."
+    ]
+  }
+}
