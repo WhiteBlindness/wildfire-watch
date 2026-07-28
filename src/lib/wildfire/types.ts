@@ -68,10 +68,15 @@ export interface WildfireEvent {
   polygon: FirePolygon | null;
   heatmapPoints: HeatmapPoint[];
 
-  wind: WindConditions;
-  forces: DeployedForces;
-  internationalAid: InternationalAid;
-  evolution: FireEvolutionPoint[];
+  /** Operational detail. Real satellite-hotspot sources (FIRMS) have none of
+   * this — a fire's wind, deployed forces, aid status, and growth history are
+   * not observable from thermal detections alone. Null means "not available
+   * from this source," never a fabricated placeholder. The UI must render
+   * accordingly rather than invent numbers to fill the gap. */
+  wind: WindConditions | null;
+  forces: DeployedForces | null;
+  internationalAid: InternationalAid | null;
+  evolution: FireEvolutionPoint[] | null;
 
   /** Which upstream feed produced this record. */
   source: "mock" | "firms" | "effis" | "civil-protection";

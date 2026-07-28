@@ -75,22 +75,26 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
                     : "—"
               }
             />
-            <Stat label="Vento" value={`${event.wind.speedKmh} km/h, ${event.wind.directionDeg}°`} />
+            {event.wind && (
+              <Stat label="Vento" value={`${event.wind.speedKmh} km/h, ${event.wind.directionDeg}°`} />
+            )}
           </dl>
 
-          <div className="rounded-lg border border-border bg-surface-muted/50 p-3">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/50">
-              Meios no terreno
-            </h3>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
-              <Stat label="Bombeiros" value={event.forces.firefighters.toLocaleString("pt-PT")} />
-              <Stat label="Veículos" value={event.forces.vehicles.toLocaleString("pt-PT")} />
-              <Stat label="Aviões" value={String(event.forces.aircraft.planes)} />
-              <Stat label="Helicópteros" value={String(event.forces.aircraft.helicopters)} />
-            </dl>
-          </div>
+          {event.forces && (
+            <div className="rounded-lg border border-border bg-surface-muted/50 p-3">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/50">
+                Meios no terreno
+              </h3>
+              <dl className="grid grid-cols-2 gap-3 text-sm">
+                <Stat label="Bombeiros" value={event.forces.firefighters.toLocaleString("pt-PT")} />
+                <Stat label="Veículos" value={event.forces.vehicles.toLocaleString("pt-PT")} />
+                <Stat label="Aviões" value={String(event.forces.aircraft.planes)} />
+                <Stat label="Helicópteros" value={String(event.forces.aircraft.helicopters)} />
+              </dl>
+            </div>
+          )}
 
-          {event.internationalAid.requested && (
+          {event.internationalAid?.requested && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
               <p className="font-medium text-amber-400">
                 {event.internationalAid.active ? "Ajuda internacional ativa" : "Ajuda internacional solicitada"}
@@ -101,12 +105,21 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
             </div>
           )}
 
-          <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/50">
-              Evolução da área ardida
-            </h3>
-            <FireEvolutionChart data={event.evolution} />
-          </div>
+          {event.evolution && event.evolution.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/50">
+                Evolução da área ardida
+              </h3>
+              <FireEvolutionChart data={event.evolution} />
+            </div>
+          )}
+
+          {event.source !== "mock" && (
+            <p className="text-xs text-foreground/40">
+              Fonte: deteções de satélite ({event.source.toUpperCase()}). Meios no terreno, vento e evolução
+              não são observáveis a partir de deteções térmicas e por isso não são apresentados.
+            </p>
+          )}
 
           <div className="mt-auto pt-2">
             <AdSlot variant="panel-rectangle" />
