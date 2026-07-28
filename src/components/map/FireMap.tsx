@@ -20,6 +20,15 @@ const STYLE_URL = {
 // trusting dark-matter's default near-black, so heatmaps/borders pop consistently.
 const DARK_BACKGROUND = "#0f172a";
 
+// Free, no-API-key satellite imagery — only surfaced as a tactical-scanner
+// reveal once zoomed into a specific fire (see SATELLITE_OPACITY below); at
+// world scale it stays fully transparent so it never competes with the base
+// vector style.
+const SATELLITE_TILE_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const SATELLITE_SOURCE_ID = "satellite-src";
+const SATELLITE_LAYER_ID = "satellite-layer";
+
 const MARKER_LAYER_ID = "fire-markers";
 const POLYGON_FILL_LAYER_ID = "fire-polygons-fill";
 const HEATMAP_LAYER_ID = "fire-heatmap";
@@ -119,6 +128,25 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
       attributionControl={{ compact: true }}
       onLoad={handleLoad}
     >
+      {theme === "dark" && (
+        // Mounted first so it lands below every fire layer that follows,
+        // but above the base style's own layers (including the background).
+        <Source id={SATELLITE_SOURCE_ID} type="raster" tiles={[SATELLITE_TILE_URL]} tileSize={256}>
+          <Layer
+            id={SATELLITE_LAYER_ID}
+            type="raster"
+            paint={{
+              "raster-brightness-max": 0.35,
+              "raster-saturation": -0.7,
+              "raster-contrast": 0.2,
+              // Invisible at world scale, fades in like a tactical scanner
+              // once the cinematic flyTo brings a fire's terrain into view.
+              "raster-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0, 8, 0.6],
+            }}
+          />
+        </Source>
+      )}
+
       <Source id="fire-heatmap-src" type="geojson" data={heatmapData}>
         {/* Wide, soft underlay reads as a glow radiating from each hotspot cluster. */}
         <Layer
