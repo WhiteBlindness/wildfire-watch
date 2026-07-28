@@ -12,11 +12,11 @@ export default function LanguageToggle() {
     <div
       role="group"
       aria-label={t.topBar.languageToggleLabel}
-      className="relative flex h-9 w-20 rounded-full border border-border bg-surface-muted p-1"
+      className="relative flex h-11 w-24 rounded-full border border-border bg-surface-muted p-1"
     >
       <span
-        className={`absolute top-1 left-1 h-7 w-9 rounded-full bg-foreground/90 transition-transform ${
-          locale === "en" ? "translate-x-9" : "translate-x-0"
+        className={`absolute top-1 left-1 h-9 w-11 rounded-full bg-foreground/90 transition-transform ${
+          locale === "en" ? "translate-x-11" : "translate-x-0"
         }`}
       />
       {OPTIONS.map((option) => (

@@ -25,7 +25,7 @@ export default function AdSlot({ variant, className }: AdSlotProps) {
   const { width, height, label } = DIMENSIONS[variant];
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-surface-muted/60 text-[10px] uppercase tracking-wide text-foreground/40 ${className ?? ""}`}
+      className={`flex shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-surface-muted/60 text-[10px] uppercase tracking-wide text-foreground/50 ${className ?? ""}`}
       style={{ width: "100%", maxWidth: width, height, margin: "0 auto" }}
       data-ad-slot={variant}
       aria-label={t.ad.ariaLabel}

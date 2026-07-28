@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { WildfireEvent } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
@@ -28,23 +29,27 @@ interface ChartRow {
 export default function FireIntensityChart({ events, onSelect }: FireIntensityChartProps) {
   const { t } = useLocale();
 
-  const rows: ChartRow[] = events
-    .filter((event): event is WildfireEvent & { maxFrpMw: number } => event.maxFrpMw != null)
-    .sort((a, b) => b.maxFrpMw - a.maxFrpMw)
-    .slice(0, TOP_N)
-    .map((event) => {
-      const label = event.country || event.region;
-      return {
-        id: event.id,
-        fullLabel: label,
-        shortLabel: truncate(label),
-        frp: Math.round(event.maxFrpMw),
-        detections: event.heatmapPoints.length,
-      };
-    });
+  const rows: ChartRow[] = useMemo(
+    () =>
+      events
+        .filter((event): event is WildfireEvent & { maxFrpMw: number } => event.maxFrpMw != null)
+        .sort((a, b) => b.maxFrpMw - a.maxFrpMw)
+        .slice(0, TOP_N)
+        .map((event) => {
+          const label = event.country || event.region;
+          return {
+            id: event.id,
+            fullLabel: label,
+            shortLabel: truncate(label),
+            frp: Math.round(event.maxFrpMw),
+            detections: event.heatmapPoints.length,
+          };
+        }),
+    [events],
+  );
 
   if (rows.length === 0) {
-    return <p className="text-xs text-foreground/40">{t.intensityChart.empty}</p>;
+    return <p className="text-xs text-foreground/50">{t.intensityChart.empty}</p>;
   }
 
   return (
@@ -97,6 +102,24 @@ export default function FireIntensityChart({ events, onSelect }: FireIntensityCh
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      {/* Recharts bars have no native keyboard/focus support, so the chart
+          alone leaves fire selection mouse-only. This list is the same
+          data as real, tabbable buttons — invisible until a keyboard user
+          reaches one, at which point it's fully visible with a focus ring. */}
+      <ul className="flex flex-wrap gap-1.5">
+        {rows.map((row) => (
+          <li key={row.id}>
+            <button
+              type="button"
+              onClick={() => onSelect(row.id)}
+              className="sr-only rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground focus:not-sr-only focus:outline-none focus:ring-2 focus:ring-rose-500"
+            >
+              {row.fullLabel} — {formatThousands(row.frp)} MW
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

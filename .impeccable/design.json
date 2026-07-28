@@ -6,6 +6,8 @@
     "colorMeta": {
       "alert-red": { "role": "primary", "displayName": "Alert Red", "canonical": "#ef4444", "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#f87171", "#fecaca"] },
       "critical-crimson": { "role": "primary", "displayName": "Critical Crimson", "canonical": "#b91c1c", "tonalRamp": ["#2c0a0a", "#450a0a", "#641616", "#7f1d1d", "#991b1b", "#b91c1c", "#d94040", "#f2a3a3"] },
+      "extreme-fill": { "role": "primary", "displayName": "Extreme Fill", "canonical": "#7f1d1d", "tonalRamp": ["#1f0707", "#340c0c", "#4d1212", "#661818", "#7f1d1d", "#9e3838", "#c26f6f", "#e5b8b8"] },
+      "high-fill": { "role": "primary", "displayName": "High Fill", "canonical": "#991b1b", "tonalRamp": ["#260707", "#3f0c0c", "#5c1212", "#7a1818", "#991b1b", "#b83e3e", "#d67878", "#f0bdbd"] },
       "amber-watch": { "role": "primary", "displayName": "Amber Watch", "canonical": "#f5c451", "tonalRamp": ["#4a3607", "#78530b", "#a5730f", "#d19317", "#eeac2c", "#f5c451", "#f9d685", "#fceec0"] },
       "signal-amber": { "role": "primary", "displayName": "Signal Amber", "canonical": "#f59e0b", "tonalRamp": ["#452c02", "#78500a", "#a06d0d", "#c8890f", "#e9a512", "#f59e0b", "#f9bb52", "#fcd999"] },
       "flare-red": { "role": "primary", "displayName": "Flare Red", "canonical": "#ff3b3b", "tonalRamp": ["#3d0909", "#661010", "#901818", "#c02222", "#ea2d2d", "#ff3b3b", "#ff7a7a", "#ffbdbd"] },

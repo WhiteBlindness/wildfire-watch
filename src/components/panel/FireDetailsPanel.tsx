@@ -40,7 +40,7 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
       <button
         type="button"
         onClick={onClose}
-        className="flex items-center gap-1 self-start text-xs font-medium text-foreground/60 hover:text-foreground"
+        className="-mx-1 -my-2 flex min-h-11 items-center gap-1 self-start px-1 py-2 text-xs font-medium text-foreground/60 hover:text-foreground"
       >
         <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2}>
           <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
@@ -59,7 +59,7 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
           type="button"
           onClick={onClose}
           aria-label={t.fireDetail.closeLabel}
-          className="rounded-full border border-border p-1.5 text-foreground/60 hover:text-foreground"
+          className="-mr-1 -mt-1 flex h-11 w-11 items-center justify-center rounded-full border border-border text-foreground/60 hover:text-foreground"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
             <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
@@ -134,7 +134,7 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
       )}
 
       {event.source !== "mock" && (
-        <p className="text-xs text-foreground/40">
+        <p className="text-xs text-foreground/50">
           {interpolate(t.fireDetail.provenanceNote, { source: event.source.toUpperCase() })}
         </p>
       )}

@@ -47,7 +47,7 @@ export default function GlobalOverview({ events, onSelect }: GlobalOverviewProps
 
       <FireIntensityChart events={events} onSelect={onSelect} />
 
-      <p className="text-xs text-foreground/40">{t.overview.hint}</p>
+      <p className="text-xs text-foreground/50">{t.overview.hint}</p>
 
       <div className="mt-auto pt-2">
         <AdSlot variant="panel-rectangle" />

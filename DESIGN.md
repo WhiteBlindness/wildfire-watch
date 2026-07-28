@@ -4,6 +4,8 @@ description: Real-time global wildfire monitoring, rendered like a midnight miss
 colors:
   alert-red: "#ef4444"
   critical-crimson: "#b91c1c"
+  extreme-fill: "#7f1d1d"
+  high-fill: "#991b1b"
   amber-watch: "#f5c451"
   signal-amber: "#f59e0b"
   flare-red: "#ff3b3b"
@@ -92,9 +94,10 @@ Component language is tactile and precise: crisp pill shapes, confident status-c
 The palette has exactly one job: make a fire's severity readable in under a second, day or night.
 
 ### Primary
-- **Alert Red** (`#ef4444`): the product's core accent — wordmark dot, "Ativo" status badge, high-severity fill/stroke/marker color. This is the color WildfireWatch is "the red one."
-- **Critical Crimson** (`#b91c1c`): extreme-severity fill, stroke, and marker color — the darkest, most saturated step in the ramp, reserved for the worst-case state.
-- **Amber Watch** (`#f5c451`) / **Signal Amber** (`#f59e0b`): low- and moderate-severity steps respectively; also the international-aid banner's accent (reuses `signal-amber` rather than a new hue).
+- **Alert Red** (`#ef4444`): the product's core accent — wordmark dot, "Ativo" status badge, high-severity marker/stroke color. This is the color WildfireWatch is "the red one."
+- **Critical Crimson** (`#b91c1c`): extreme-severity marker and stroke color — the darkest, most saturated step in the ramp, reserved for the worst-case state.
+- **High Fill** (`#991b1b`) / **Extreme Fill** (`#7f1d1d`): darker, more muted variants of Alert Red / Critical Crimson used only for burned-area polygon *fills*, never for markers, badges, or strokes — the marker/badge stays bright and legible while the fill reads as a duller "scorched" wash underneath.
+- **Amber Watch** (`#f5c451`) / **Signal Amber** (`#f59e0b`): low- and moderate-severity steps respectively; also the international-aid banner's accent (reuses `signal-amber` rather than a new hue). These double as the moderate/low polygon fill colors too — only extreme/high get a distinct darker fill variant.
 - **Flare Red** (`#ff3b3b`): the bright, saturated stroke color for burned-area polygon borders on high/extreme fires — never used as a fill, only as the "hot edge" line.
 
 ### Tertiary

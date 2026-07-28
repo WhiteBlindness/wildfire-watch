@@ -14,7 +14,7 @@ export default function ThemeToggle() {
   // flag, not a sync with an external system, so the set-state-in-effect rule doesn't apply here.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
-  if (!mounted) return <div className="h-9 w-16 rounded-full" aria-hidden />;
+  if (!mounted) return <div className="h-11 w-20 rounded-full" aria-hidden />;
 
   const isDark = resolvedTheme === "dark";
 
@@ -25,11 +25,11 @@ export default function ThemeToggle() {
       aria-checked={isDark}
       aria-label={t.topBar.themeToggleLabel}
       onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="relative h-9 w-16 rounded-full border border-border bg-surface-muted transition-colors"
+      className="relative h-11 w-20 rounded-full border border-border bg-surface-muted transition-colors"
     >
       <span
-        className={`absolute top-1 left-1 h-7 w-7 rounded-full bg-foreground/90 text-background flex items-center justify-center transition-transform ${
-          isDark ? "translate-x-7" : "translate-x-0"
+        className={`absolute top-1 left-1 h-9 w-9 rounded-full bg-foreground/90 text-background flex items-center justify-center transition-transform ${
+          isDark ? "translate-x-9" : "translate-x-0"
         }`}
       >
         {isDark ? (
