@@ -52,6 +52,14 @@ const en = {
     timeLabel: "Time",
     personnelLabel: "Personnel",
   },
+  intensityChart: {
+    title: "Top threats by intensity",
+    subtitle: "Most intense active complexes, by peak radiative power",
+    yAxisLabel: "Radiative power (MW)",
+    tooltipFrpLabel: "Peak radiative power",
+    tooltipDetectionsLabel: "Detections",
+    empty: "No radiative power data available for this source.",
+  },
 };
 
 export default en;

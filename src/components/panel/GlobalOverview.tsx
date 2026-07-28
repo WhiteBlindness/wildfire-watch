@@ -4,6 +4,7 @@ import type { WildfireEvent } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import AdSlot from "@/components/ui/AdSlot";
+import FireIntensityChart from "./FireIntensityChart";
 
 interface GlobalOverviewProps {
   events: WildfireEvent[];
@@ -42,6 +43,8 @@ export default function GlobalOverview({ events }: GlobalOverviewProps) {
           tone="neutral"
         />
       </div>
+
+      <FireIntensityChart events={events} />
 
       <p className="text-xs text-foreground/40">{t.overview.hint}</p>
 

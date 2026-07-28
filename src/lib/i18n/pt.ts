@@ -55,6 +55,15 @@ const pt: Dictionary = {
     timeLabel: "Hora",
     personnelLabel: "Efetivos",
   },
+  intensityChart: {
+    // Sentence case, no anglicism ("Top" avoided per the PT-PT style rules).
+    title: "Principais focos por intensidade",
+    subtitle: "Complexos ativos mais intensos, por energia radiativa máxima",
+    yAxisLabel: "Energia radiativa (MW)",
+    tooltipFrpLabel: "Energia radiativa máxima",
+    tooltipDetectionsLabel: "Deteções",
+    empty: "Sem dados de energia radiativa disponíveis para esta fonte.",
+  },
 };
 
 export default pt;
