@@ -39,7 +39,12 @@ export default function HomeClient({ events }: HomeClientProps) {
         </div>
       </div>
 
-      <SidePanel events={events} selectedEvent={selectedEvent} onClose={() => setSelectedId(null)} />
+      <SidePanel
+        events={events}
+        selectedEvent={selectedEvent}
+        onSelect={setSelectedId}
+        onClose={() => setSelectedId(null)}
+      />
     </main>
   );
 }

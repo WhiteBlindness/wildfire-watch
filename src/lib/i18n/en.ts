@@ -27,6 +27,7 @@ const en = {
   },
   fireDetail: {
     closeLabel: "Close panel",
+    backToGlobalMap: "Back to global map",
     severityLabel: "Severity",
     areaLabel: "Burned area",
     startLabel: "Started",

@@ -30,6 +30,7 @@ const pt: Dictionary = {
   },
   fireDetail: {
     closeLabel: "Fechar painel",
+    backToGlobalMap: "Voltar ao mapa global",
     severityLabel: "Severidade",
     areaLabel: "Área ardida",
     startLabel: "Início",

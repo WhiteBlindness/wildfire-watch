@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
-import Map, { Layer, Source, type MapLayerMouseEvent } from "react-map-gl/maplibre";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import Map, { Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { WildfireEvent } from "@/lib/wildfire/types";
@@ -21,6 +21,19 @@ const STYLE_URL = {
 const DARK_BACKGROUND = "#0f172a";
 
 const MARKER_LAYER_ID = "fire-markers";
+const POLYGON_FILL_LAYER_ID = "fire-polygons-fill";
+const HEATMAP_LAYER_ID = "fire-heatmap";
+// Every layer whose features carry a `fireId` property — clicking or
+// hovering any of them (marker, burned-area fill, or heatmap core) selects
+// the fire, not just the small marker dot.
+const INTERACTIVE_LAYER_IDS = [MARKER_LAYER_ID, POLYGON_FILL_LAYER_ID, HEATMAP_LAYER_ID];
+
+const WORLD_VIEW = { longitude: 5, latitude: 25, zoom: 1.6 };
+const FIRE_DETAIL_ZOOM = 10;
+// Cinematic, not instant — essential:true keeps the animation even under
+// prefers-reduced-motion, since the camera move here carries real meaning
+// (which fire is now in view), not just decoration.
+const FLY_DURATION_MS = 1800;
 
 interface FireMapProps {
   events: WildfireEvent[];
@@ -30,6 +43,7 @@ interface FireMapProps {
 }
 
 export default function FireMap({ events, selectedId, onSelect, theme }: FireMapProps) {
+  const mapRef = useRef<MapRef>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const heatmapData = useMemo(() => eventsToHeatmapGeoJSON(events), [events]);
@@ -62,13 +76,42 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
     [theme],
   );
 
+  // Cinematic camera: fly to the selected fire (from a map click or a panel
+  // click, either way — this only cares about the resulting selectedId), or
+  // back out to the world view once nothing is selected.
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    // `.loaded()` also throws once the underlying map has been torn down
+    // (e.g. a React tree regenerated after an unrelated hydration mismatch
+    // leaves a stale ref) — guard defensively so a camera move never crashes
+    // the app; worst case, this one flyTo is silently skipped.
+    if (!map) return;
+    try {
+      if (!map.loaded()) return;
+    } catch {
+      return;
+    }
+
+    const selectedEvent = selectedId ? events.find((event) => event.id === selectedId) : null;
+    const target = selectedEvent
+      ? { center: [selectedEvent.location.lng, selectedEvent.location.lat] as [number, number], zoom: FIRE_DETAIL_ZOOM }
+      : { center: [WORLD_VIEW.longitude, WORLD_VIEW.latitude] as [number, number], zoom: WORLD_VIEW.zoom };
+
+    try {
+      map.flyTo({ ...target, duration: FLY_DURATION_MS, essential: true });
+    } catch {
+      // Stale/torn-down map instance — nothing to recover, just skip.
+    }
+  }, [selectedId, events]);
+
   return (
     <Map
-      initialViewState={{ longitude: 5, latitude: 25, zoom: 1.6 }}
+      ref={mapRef}
+      initialViewState={{ longitude: WORLD_VIEW.longitude, latitude: WORLD_VIEW.latitude, zoom: WORLD_VIEW.zoom }}
       mapStyle={STYLE_URL[theme]}
       projection="mercator"
       style={{ width: "100%", height: "100%" }}
-      interactiveLayerIds={[MARKER_LAYER_ID]}
+      interactiveLayerIds={INTERACTIVE_LAYER_IDS}
       onClick={handleClick}
       onMouseMove={handleMove}
       onMouseLeave={() => setHoveredId(null)}
@@ -98,7 +141,7 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
           }}
         />
         <Layer
-          id="fire-heatmap"
+          id={HEATMAP_LAYER_ID}
           type="heatmap"
           paint={{
             "heatmap-weight": ["get", "intensity"],
@@ -122,7 +165,7 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
 
       <Source id="fire-polygons-src" type="geojson" data={polygonData}>
         <Layer
-          id="fire-polygons-fill"
+          id={POLYGON_FILL_LAYER_ID}
           type="fill"
           paint={{
             "fill-color": [

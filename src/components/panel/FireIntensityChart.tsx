@@ -7,6 +7,7 @@ import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface FireIntensityChartProps {
   events: WildfireEvent[];
+  onSelect: (id: string) => void;
 }
 
 const TOP_N = 6;
@@ -24,7 +25,7 @@ interface ChartRow {
   detections: number;
 }
 
-export default function FireIntensityChart({ events }: FireIntensityChartProps) {
+export default function FireIntensityChart({ events, onSelect }: FireIntensityChartProps) {
   const { t } = useLocale();
 
   const rows: ChartRow[] = events
@@ -82,7 +83,17 @@ export default function FireIntensityChart({ events }: FireIntensityChartProps) 
               cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
               content={(props) => <IntensityTooltip {...props} t={t} />}
             />
-            <Bar dataKey="frp" fill="url(#intensityBarFill)" radius={[4, 4, 0, 0]} maxBarSize={36} />
+            <Bar
+              dataKey="frp"
+              fill="url(#intensityBarFill)"
+              radius={[4, 4, 0, 0]}
+              maxBarSize={36}
+              cursor="pointer"
+              onClick={(data) => {
+                const row = (data as { payload?: ChartRow })?.payload;
+                if (row) onSelect(row.id);
+              }}
+            />
           </BarChart>
         </ResponsiveContainer>
       </div>

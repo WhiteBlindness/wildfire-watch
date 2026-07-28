@@ -8,9 +8,10 @@ import FireIntensityChart from "./FireIntensityChart";
 
 interface GlobalOverviewProps {
   events: WildfireEvent[];
+  onSelect: (id: string) => void;
 }
 
-export default function GlobalOverview({ events }: GlobalOverviewProps) {
+export default function GlobalOverview({ events, onSelect }: GlobalOverviewProps) {
   const { t } = useLocale();
   const totalFocos = events.length;
   const totalAreaHectares = events.reduce((sum, event) => sum + event.areaHectares, 0);
@@ -44,7 +45,7 @@ export default function GlobalOverview({ events }: GlobalOverviewProps) {
         />
       </div>
 
-      <FireIntensityChart events={events} />
+      <FireIntensityChart events={events} onSelect={onSelect} />
 
       <p className="text-xs text-foreground/40">{t.overview.hint}</p>
 

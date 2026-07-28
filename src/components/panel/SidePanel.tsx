@@ -7,10 +7,11 @@ import GlobalOverview from "./GlobalOverview";
 interface SidePanelProps {
   events: WildfireEvent[];
   selectedEvent: WildfireEvent | null;
+  onSelect: (id: string) => void;
   onClose: () => void;
 }
 
-export default function SidePanel({ events, selectedEvent, onClose }: SidePanelProps) {
+export default function SidePanel({ events, selectedEvent, onSelect, onClose }: SidePanelProps) {
   // Always docked — "Mission Control" reads as a permanent instrument, not a
   // modal that appears/disappears. Only the content and the mobile sheet's
   // height change between the global dashboard and a single fire's detail.
@@ -25,7 +26,7 @@ export default function SidePanel({ events, selectedEvent, onClose }: SidePanelP
       {selectedEvent ? (
         <FireDetailsPanel event={selectedEvent} onClose={onClose} />
       ) : (
-        <GlobalOverview events={events} />
+        <GlobalOverview events={events} onSelect={onSelect} />
       )}
     </aside>
   );
