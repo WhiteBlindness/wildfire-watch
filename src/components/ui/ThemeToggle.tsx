@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 export default function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
+  const { t } = useLocale();
   const [mounted, setMounted] = useState(false);
 
   // Avoid rendering theme-dependent UI before hydration (resolvedTheme is
@@ -21,7 +23,7 @@ export default function ThemeToggle() {
       type="button"
       role="switch"
       aria-checked={isDark}
-      aria-label="Alternar entre modo claro e escuro"
+      aria-label={t.topBar.themeToggleLabel}
       onClick={() => setTheme(isDark ? "light" : "dark")}
       className="relative h-9 w-16 rounded-full border border-border bg-surface-muted transition-colors"
     >

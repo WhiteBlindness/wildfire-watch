@@ -1,5 +1,8 @@
+"use client";
+
 import type { WildfireEvent } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import AdSlot from "@/components/ui/AdSlot";
 
 interface GlobalOverviewProps {
@@ -7,6 +10,7 @@ interface GlobalOverviewProps {
 }
 
 export default function GlobalOverview({ events }: GlobalOverviewProps) {
+  const { t } = useLocale();
   const totalFocos = events.length;
   const totalAreaHectares = events.reduce((sum, event) => sum + event.areaHectares, 0);
   const maxFrpMw = events.reduce<number | null>((max, event) => {
@@ -17,31 +21,29 @@ export default function GlobalOverview({ events }: GlobalOverviewProps) {
   return (
     <div className="flex h-full flex-col gap-4 p-5">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Visão global</h2>
-        <p className="text-sm text-foreground/60">Todos os focos atualmente monitorizados</p>
+        <h2 className="text-lg font-semibold text-foreground">{t.overview.title}</h2>
+        <p className="text-sm text-foreground/60">{t.overview.subtitle}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-3">
         <MetricCard
-          label="Focos monitorizados"
+          label={t.overview.metricFoci}
           value={formatThousands(totalFocos)}
           tone="neutral"
         />
         <MetricCard
-          label="Energia radiativa máxima"
+          label={t.overview.metricMaxFrp}
           value={maxFrpMw != null ? `${formatThousands(maxFrpMw)} MW` : "—"}
           tone="critical"
         />
         <MetricCard
-          label="Área global estimada"
+          label={t.overview.metricArea}
           value={`${formatThousands(totalAreaHectares)} ha`}
           tone="neutral"
         />
       </div>
 
-      <p className="text-xs text-foreground/40">
-        Selecione um foco no mapa para ver os detalhes individuais de cada incêndio.
-      </p>
+      <p className="text-xs text-foreground/40">{t.overview.hint}</p>
 
       <div className="mt-auto pt-2">
         <AdSlot variant="panel-rectangle" />

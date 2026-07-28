@@ -1,4 +1,5 @@
 import ThemeToggle from "@/components/ui/ThemeToggle";
+import LanguageToggle from "@/components/ui/LanguageToggle";
 
 export default function TopBar() {
   return (
@@ -9,7 +10,8 @@ export default function TopBar() {
           Wildfire<span className="text-red-500">Watch</span>
         </h1>
       </div>
-      <div className="pointer-events-auto">
+      <div className="pointer-events-auto flex items-center gap-2">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
     </header>

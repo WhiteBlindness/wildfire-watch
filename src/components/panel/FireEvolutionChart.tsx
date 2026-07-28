@@ -2,16 +2,22 @@
 
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { FireEvolutionPoint } from "@/lib/wildfire/types";
+import { formatThousands } from "@/lib/wildfire/format";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface FireEvolutionChartProps {
   data: FireEvolutionPoint[];
 }
 
-function formatHour(iso: string): string {
-  return new Date(iso).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
-}
+const TIME_LOCALE: Record<"en" | "pt", string> = { en: "en-GB", pt: "pt-PT" };
 
 export default function FireEvolutionChart({ data }: FireEvolutionChartProps) {
+  const { locale, t } = useLocale();
+
+  function formatHour(iso: string): string {
+    return new Date(iso).toLocaleTimeString(TIME_LOCALE[locale], { hour: "2-digit", minute: "2-digit" });
+  }
+
   const chartData = data.map((point) => ({ ...point, label: formatHour(point.timestamp) }));
 
   return (
@@ -29,12 +35,12 @@ export default function FireEvolutionChart({ data }: FireEvolutionChartProps) {
           <YAxis tick={{ fontSize: 10, fill: "currentColor" }} tickLine={false} axisLine={false} width={48} />
           <Tooltip
             contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-            labelFormatter={(label) => `Hora: ${label}`}
+            labelFormatter={(label) => `${t.chart.timeLabel}: ${label}`}
             formatter={(value, name) => {
               const num = Number(value);
               return [
-                name === "areaHectares" ? `${num.toLocaleString("pt-PT")} ha` : `${num.toLocaleString("pt-PT")} pessoas`,
-                name === "areaHectares" ? "Área ardida" : "Efetivos",
+                name === "areaHectares" ? `${formatThousands(num)} ha` : `${formatThousands(num)} ${t.chart.personnelLabel.toLowerCase()}`,
+                name === "areaHectares" ? t.fireDetail.areaLabel : t.chart.personnelLabel,
               ];
             }}
           />
