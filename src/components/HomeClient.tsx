@@ -24,14 +24,20 @@ export default function HomeClient({ events }: HomeClientProps) {
   const mapTheme = resolvedTheme === "light" ? "light" : "dark";
 
   return (
-    <main className="relative h-dvh w-full">
+    <main className="relative h-dvh w-full overflow-hidden">
       {/* h-dvh (dynamic viewport height), not h-full/h-screen: iOS Safari's
           collapsing/expanding address bar resizes the *visual* viewport, and
           a height chain built on percentages anchored to the *layout*
           viewport (html/body height:100%) can end up 0/mis-sized there. dvh
           is viewport-relative on its own, so this wrapper no longer depends
-          on that ancestor chain at all. */}
-      <FireMap events={events} selectedId={selectedId} onSelect={setSelectedId} theme={mapTheme} />
+          on that ancestor chain at all.
+
+          The map sits in its own absolutely-positioned layer rather than
+          growing from flex/percentage rules, so its size never depends on
+          sibling layout, and it owns the bottom of the stacking order. */}
+      <div className="absolute inset-0 z-0">
+        <FireMap events={events} selectedId={selectedId} onSelect={setSelectedId} theme={mapTheme} />
+      </div>
 
       <TopBar />
 
