@@ -121,7 +121,11 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
       ref={mapRef}
       initialViewState={{ longitude: WORLD_VIEW.longitude, latitude: WORLD_VIEW.latitude, zoom: WORLD_VIEW.zoom }}
       mapStyle={STYLE_URL[theme]}
-      projection="mercator"
+      // 3D globe at world scale; MapLibre auto-unprojects to flat mercator
+      // as zoom increases (~z5-7), right as the satellite layer starts
+      // fading in at z8 — the globe flattens into the tactical map, not two
+      // separate cinematic beats.
+      projection={{ type: "globe" }}
       style={{ width: "100%", height: "100%" }}
       interactiveLayerIds={INTERACTIVE_LAYER_IDS}
       onClick={handleClick}

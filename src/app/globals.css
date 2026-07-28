@@ -32,7 +32,11 @@
 
 html,
 body {
+  /* 100% first as a fallback for browsers without dvh support (ignored,
+     rule below wins); 100dvh anchors directly to the *visual* viewport so
+     iOS Safari's collapsing/expanding address bar can't collapse this. */
   height: 100%;
+  height: 100dvh;
 }
 
 body {
