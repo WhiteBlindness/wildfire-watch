@@ -37,7 +37,10 @@ const HEATMAP_LAYER_ID = "fire-heatmap";
 // the fire, not just the small marker dot.
 const INTERACTIVE_LAYER_IDS = [MARKER_LAYER_ID, POLYGON_FILL_LAYER_ID, HEATMAP_LAYER_ID];
 
-const WORLD_VIEW = { longitude: 5, latitude: 25, zoom: 1.6 };
+// Centered on Iberia/the Atlantic rather than the equator — frames Europe,
+// North Africa, and the Atlantic on desktop instead of cutting Europe off
+// to one side. Also the "Voltar ao mapa global" fly-back target below.
+const WORLD_VIEW = { longitude: -9.0, latitude: 39.0, zoom: 3 };
 const FIRE_DETAIL_ZOOM = 10;
 // Cinematic, not instant — essential:true keeps the animation even under
 // prefers-reduced-motion, since the camera move here carries real meaning
