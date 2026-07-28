@@ -25,7 +25,7 @@ const MARKER_LAYER_ID = "fire-markers";
 interface FireMapProps {
   events: WildfireEvent[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   theme: "dark" | "light";
 }
 
@@ -39,8 +39,8 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
   const handleClick = useCallback(
     (e: MapLayerMouseEvent) => {
       const feature = e.features?.[0];
-      const fireId = feature?.properties?.fireId as string | undefined;
-      if (fireId) onSelect(fireId);
+      const fireId = (feature?.properties?.fireId as string | undefined) ?? null;
+      onSelect(fireId);
     },
     [onSelect],
   );

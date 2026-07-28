@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import dynamic from "next/dynamic";
 import TopBar from "@/components/layout/TopBar";
 import Legend from "@/components/map/Legend";
-import FireDetailsPanel from "@/components/panel/FireDetailsPanel";
+import SidePanel from "@/components/panel/SidePanel";
 import AdSlot from "@/components/ui/AdSlot";
 import type { WildfireEvent } from "@/lib/wildfire/types";
 
@@ -29,22 +29,17 @@ export default function HomeClient({ events }: HomeClientProps) {
 
       <TopBar />
 
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 flex items-end justify-between gap-3 p-3 md:p-4">
+      {/* The side panel is permanently docked now (Global Overview when
+          nothing is selected) — desktop only, and kept clear of its 400px
+          reserved width so it never renders underneath it. */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 hidden items-end justify-between gap-3 p-4 md:right-[416px] md:flex">
         <Legend />
-        <div className="pointer-events-auto hidden md:block">
+        <div className="pointer-events-auto shrink-0">
           <AdSlot variant="sidebar-banner" />
         </div>
       </div>
 
-      {!selectedEvent && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-20 z-10 flex justify-center md:hidden">
-          <div className="pointer-events-auto">
-            <AdSlot variant="mobile-leaderboard" />
-          </div>
-        </div>
-      )}
-
-      <FireDetailsPanel event={selectedEvent} onClose={() => setSelectedId(null)} />
+      <SidePanel events={events} selectedEvent={selectedEvent} onClose={() => setSelectedId(null)} />
     </main>
   );
 }

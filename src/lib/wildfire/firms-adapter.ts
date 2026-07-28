@@ -157,6 +157,7 @@ function rowsToEvent(key: string, rows: FirmsRow[]): WildfireEvent {
     forces: null,
     internationalAid: null,
     evolution: null,
+    maxFrpMw: maxFrp,
     source: "firms",
     lastUpdated: new Date().toISOString(),
   };

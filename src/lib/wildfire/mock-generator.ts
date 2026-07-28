@@ -206,6 +206,7 @@ function toEvent(seed: FireSeed, index: number): WildfireEvent {
       countries: needsAid ? shuffle(rand, AID_COUNTRIES).slice(0, seededInt(rand, 1, 3)) : [],
     },
     evolution,
+    maxFrpMw: null,
     source: "mock",
     lastUpdated: now.toISOString(),
   };

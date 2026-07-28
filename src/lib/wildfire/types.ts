@@ -78,6 +78,11 @@ export interface WildfireEvent {
   internationalAid: InternationalAid | null;
   evolution: FireEvolutionPoint[] | null;
 
+  /** Peak Fire Radiative Power (MW) across this cluster's detections — a real
+   * physical measurement satellite sources provide. Null for sources (mock)
+   * that have no such sensor reading. */
+  maxFrpMw: number | null;
+
   /** Which upstream feed produced this record. */
   source: "mock" | "firms" | "effis" | "civil-protection";
   lastUpdated: string;
