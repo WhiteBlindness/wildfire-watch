@@ -19,9 +19,15 @@ interface HomeClientProps {
 export default function HomeClient({ events }: HomeClientProps) {
   const { resolvedTheme } = useTheme();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isPanelMinimized, setIsPanelMinimized] = useState(true);
 
   const selectedEvent = events.find((event) => event.id === selectedId) ?? null;
   const mapTheme = resolvedTheme === "light" ? "light" : "dark";
+
+  function handleSelect(id: string | null): void {
+    setSelectedId(id);
+    if (id) setIsPanelMinimized(false);
+  }
 
   return (
     <main className="relative h-dvh w-full overflow-hidden">
@@ -36,7 +42,7 @@ export default function HomeClient({ events }: HomeClientProps) {
           growing from flex/percentage rules, so its size never depends on
           sibling layout, and it owns the bottom of the stacking order. */}
       <div className="absolute inset-0 z-0">
-        <FireMap events={events} selectedId={selectedId} onSelect={setSelectedId} theme={mapTheme} />
+        <FireMap events={events} selectedId={selectedId} onSelect={handleSelect} theme={mapTheme} />
       </div>
 
       <TopBar />
@@ -54,8 +60,10 @@ export default function HomeClient({ events }: HomeClientProps) {
       <SidePanel
         events={events}
         selectedEvent={selectedEvent}
-        onSelect={setSelectedId}
-        onClose={() => setSelectedId(null)}
+        isMinimized={isPanelMinimized}
+        onSelect={(id) => handleSelect(id)}
+        onClose={() => handleSelect(null)}
+        onToggleMinimized={() => setIsPanelMinimized((current) => !current)}
       />
     </main>
   );

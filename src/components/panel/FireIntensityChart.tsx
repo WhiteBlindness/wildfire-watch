@@ -36,7 +36,9 @@ export default function FireIntensityChart({ events, onSelect }: FireIntensityCh
         .sort((a, b) => b.maxFrpMw - a.maxFrpMw)
         .slice(0, TOP_N)
         .map((event) => {
-          const label = event.country || event.region;
+          const label = event.country === "Localização aproximada"
+            ? `${event.location.lat.toFixed(2)}, ${event.location.lng.toFixed(2)}`
+            : event.country || event.region;
           return {
             id: event.id,
             fullLabel: label,

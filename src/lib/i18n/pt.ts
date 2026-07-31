@@ -5,6 +5,10 @@ const pt: Dictionary = {
     themeToggleLabel: "Alternar entre modo claro e escuro",
     languageToggleLabel: "Alternar idioma",
   },
+  panel: {
+    expand: "Abrir centro de comando",
+    collapse: "Minimizar centro de comando",
+  },
   legend: {
     title: "Severidade",
     low: "Baixa",
@@ -57,8 +61,6 @@ const pt: Dictionary = {
     confidenceLabel: "Confiança",
     detectedAtLabel: "Detetado em",
     referencePerimeterNote: "O contorno no mapa é um perímetro de referência simulado em torno desta anomalia térmica, não um limite de área ardida medido.",
-    provenanceNote:
-      "Fonte: deteções de satélite ({source}). Os meios no terreno e o vento não são observáveis a partir de deteções térmicas; o histórico do painel está claramente identificado como simulado.",
   },
   ad: {
     label: "Publicidade",

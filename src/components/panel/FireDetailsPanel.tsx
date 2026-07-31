@@ -2,7 +2,6 @@
 
 import type { WildfireEvent } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
-import { interpolate } from "@/lib/i18n/dictionaries";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireTelemetryDashboard from "./FireTelemetryDashboard";
 import AdSlot from "@/components/ui/AdSlot";
@@ -143,12 +142,6 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
       )}
 
       <FireTelemetryDashboard telemetry={event.telemetry} />
-
-      {event.source !== "mock" && (
-        <p className="text-xs text-foreground/50">
-          {interpolate(t.fireDetail.provenanceNote, { source: event.source.toUpperCase() })}
-        </p>
-      )}
 
       <div className="mt-auto pt-2">
         <AdSlot variant="panel-rectangle" />

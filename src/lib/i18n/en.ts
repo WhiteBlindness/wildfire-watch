@@ -5,6 +5,10 @@ const en = {
     themeToggleLabel: "Toggle light and dark mode",
     languageToggleLabel: "Switch language",
   },
+  panel: {
+    expand: "Open mission control",
+    collapse: "Minimize mission control",
+  },
   legend: {
     title: "Severity",
     low: "Low",
@@ -57,8 +61,6 @@ const en = {
     confidenceLabel: "Confidence",
     detectedAtLabel: "Detected at",
     referencePerimeterNote: "The map outline is a simulated reference perimeter around this thermal anomaly, not a measured burn boundary.",
-    provenanceNote:
-      "Source: satellite detections ({source}). Ground forces and wind are not observable from thermal detections; dashboard history is clearly marked as simulated.",
   },
   ad: {
     label: "Advertisement",
