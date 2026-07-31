@@ -79,8 +79,9 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
 
   const handleLoad = useCallback(
     (e: MapLibreEvent) => {
-      if (theme !== "dark") return;
       const map = e.target;
+      map.setProjection({ type: "globe" });
+      if (theme !== "dark") return;
       // dark-matter's background layer is always id "background" per its style spec.
       if (map.getLayer("background")) {
         map.setPaintProperty("background", "background-color", DARK_BACKGROUND);
