@@ -23,7 +23,8 @@ const TIME_LOCALE: Record<"en" | "pt", string> = { en: "en-GB", pt: "pt-PT" };
 
 export default function FireTelemetryDashboard({ telemetry }: FireTelemetryDashboardProps) {
   const { locale, t } = useLocale();
-  const data = telemetry.points.map((point) => ({
+  const telemetryPoints = Array.isArray(telemetry.points) ? telemetry.points : [];
+  const data = telemetryPoints.map((point) => ({
     ...point,
     time: new Date(point.timestamp).toLocaleTimeString(TIME_LOCALE[locale], { hour: "2-digit", minute: "2-digit" }),
   }));
@@ -40,7 +41,7 @@ export default function FireTelemetryDashboard({ telemetry }: FireTelemetryDashb
       </div>
 
       <ChartSection title={t.fireDetail.fireProgressionTitle}>
-        <div className="w-full">
+        <div className="relative h-[150px] min-h-[150px] w-full">
           <ResponsiveContainer width="100%" height={150}>
             <AreaChart data={data} margin={{ top: 6, right: 6, left: -16, bottom: 0 }}>
               <defs>
@@ -60,7 +61,7 @@ export default function FireTelemetryDashboard({ telemetry }: FireTelemetryDashb
       </ChartSection>
 
       <ChartSection title={t.fireDetail.resourceAllocationTitle} className="mt-4">
-        <div className="w-full">
+        <div className="relative h-[150px] min-h-[150px] w-full">
           <ResponsiveContainer width="100%" height={150}>
             <BarChart data={data} margin={{ top: 6, right: 6, left: -16, bottom: 0 }} barGap={2}>
               <CartesianGrid stroke="currentColor" strokeOpacity={0.1} vertical={false} />

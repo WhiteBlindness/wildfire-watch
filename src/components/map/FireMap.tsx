@@ -124,7 +124,8 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
       mapStyle={STYLE_URL[theme]}
       // A globe keeps global anomaly distribution legible at the world view;
       // selected-fire flyTo transitions naturally into the local detail view.
-      projection="globe"
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      projection={"globe" as any}
       style={{ width: "100%", height: "100%" }}
       interactiveLayerIds={INTERACTIVE_LAYER_IDS}
       onClick={handleClick}
