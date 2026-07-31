@@ -122,9 +122,9 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
       ref={mapRef}
       initialViewState={{ longitude: WORLD_VIEW.longitude, latitude: WORLD_VIEW.latitude, zoom: WORLD_VIEW.zoom }}
       mapStyle={STYLE_URL[theme]}
-      // Mercator, not globe: globe is the newer/heavier render path and we
-      // want a stable baseline on iOS Safari's WebGL implementation first.
-      projection="mercator"
+      // A globe keeps global anomaly distribution legible at the world view;
+      // selected-fire flyTo transitions naturally into the local detail view.
+      projection="globe"
       style={{ width: "100%", height: "100%" }}
       interactiveLayerIds={INTERACTIVE_LAYER_IDS}
       onClick={handleClick}

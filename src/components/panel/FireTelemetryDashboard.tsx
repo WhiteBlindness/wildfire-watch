@@ -40,8 +40,8 @@ export default function FireTelemetryDashboard({ telemetry }: FireTelemetryDashb
       </div>
 
       <ChartSection title={t.fireDetail.fireProgressionTitle}>
-        <div className="h-40 w-full">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="w-full">
+          <ResponsiveContainer width="100%" height={150}>
             <AreaChart data={data} margin={{ top: 6, right: 6, left: -16, bottom: 0 }}>
               <defs>
                 <linearGradient id="telemetry-area-fill" x1="0" y1="0" x2="0" y2="1">
@@ -60,8 +60,8 @@ export default function FireTelemetryDashboard({ telemetry }: FireTelemetryDashb
       </ChartSection>
 
       <ChartSection title={t.fireDetail.resourceAllocationTitle} className="mt-4">
-        <div className="h-36 w-full">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="w-full">
+          <ResponsiveContainer width="100%" height={150}>
             <BarChart data={data} margin={{ top: 6, right: 6, left: -16, bottom: 0 }} barGap={2}>
               <CartesianGrid stroke="currentColor" strokeOpacity={0.1} vertical={false} />
               <XAxis dataKey="time" tick={{ fontSize: 10, fill: "currentColor" }} tickLine={false} axisLine={false} minTickGap={28} />
