@@ -9,5 +9,11 @@
   },
   "vars": {
     "DATA_SOURCE": "firms"
-  }
+  },
+  "kv_namespaces": [
+    {
+      "binding": "FIRMS_CACHE",
+      "id": "6f6588ad3c434c3aad5767d50f91f730"
+    }
+  ]
 }

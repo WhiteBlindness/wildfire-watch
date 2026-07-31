@@ -54,7 +54,7 @@ export default function SidePanel({
 
       <div id="mission-control-panel-content" className="min-h-0 flex-1 overflow-y-auto">
         {selectedEvent ? (
-          <FireDetailsPanel event={selectedEvent} onClose={onClose} />
+          <FireDetailsPanel key={selectedEvent.id} event={selectedEvent} onClose={onClose} />
         ) : (
           <GlobalOverview events={events} onSelect={onSelect} />
         )}

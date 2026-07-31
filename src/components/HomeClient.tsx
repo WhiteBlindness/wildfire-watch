@@ -7,7 +7,7 @@ import TopBar from "@/components/layout/TopBar";
 import Legend from "@/components/map/Legend";
 import SidePanel from "@/components/panel/SidePanel";
 import AdSlot from "@/components/ui/AdSlot";
-import { generateMockEvents } from "@/lib/wildfire/mock-generator";
+import { firmsAdapter } from "@/lib/wildfire/firms-adapter";
 import type { WildfireEvent } from "@/lib/wildfire/types";
 
 // MapLibre touches `window` on import, so the map must never render during SSR.
@@ -23,15 +23,18 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isPanelMinimized, setIsPanelMinimized] = useState(true);
 
-  // Keep the Worker response lean. The fallback dataset is deterministic and
-  // contains no server secrets, so generating it after hydration avoids
-  // serializing the full map payload into HTML/RSC on every request.
+  // The page request remains tiny: hotspot data arrives from the Worker KV
+  // endpoint after hydration. NASA is only contacted by the hourly ingestor.
   useEffect(() => {
     if (initialEvents.length > 0) return;
-
-    const frame = requestAnimationFrame(() => setEvents(generateMockEvents()));
+    let cancelled = false;
+    firmsAdapter.listEvents().then((nextEvents) => {
+      if (!cancelled) setEvents(nextEvents);
+    }).catch((error: unknown) => {
+      console.error("Unable to load cached FIRMS hotspots", error);
+    });
     return () => {
-      cancelAnimationFrame(frame);
+      cancelled = true;
     };
   }, [initialEvents]);
 

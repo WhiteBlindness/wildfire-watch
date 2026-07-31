@@ -22,7 +22,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build and Deploy
+      - name: Build and deploy application
         run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Deploy hourly FIRMS ingestion worker
+        run: npm run deploy:ingest
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

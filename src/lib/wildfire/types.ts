@@ -102,7 +102,8 @@ export interface WildfireEvent {
   forces: DeployedForces | null;
   internationalAid: InternationalAid | null;
   evolution: FireEvolutionPoint[] | null;
-  telemetry: FireTelemetry;
+  /** Generated lazily for lightweight FIRMS cache records. */
+  telemetry?: FireTelemetry;
 
   /** Peak Fire Radiative Power (MW) across this cluster's detections — a real
    * physical measurement satellite sources provide. Null for sources (mock)
@@ -115,6 +116,13 @@ export interface WildfireEvent {
   /** Which upstream feed produced this record. */
   source: "mock" | "firms" | "effis" | "civil-protection";
   lastUpdated: string;
+}
+
+export interface FireWeather {
+  temperatureC: number;
+  windSpeedKmh: number;
+  windDirectionDeg: number;
+  observedAt: string;
 }
 
 /** Contract every real/mock data provider must implement. UI code only ever

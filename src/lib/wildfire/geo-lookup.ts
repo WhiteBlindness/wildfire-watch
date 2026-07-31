@@ -1,5 +1,3 @@
-import "server-only";
-
 // FIRMS hotspots carry coordinates rather than administrative names. This is
 // a best-effort display lookup, not a geocoding service.
 interface CountryBox {

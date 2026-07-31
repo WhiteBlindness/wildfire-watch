@@ -11,17 +11,19 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { FireTelemetry, FireTelemetryPoint } from "@/lib/wildfire/types";
+import type { FireTelemetry, FireTelemetryPoint, FireWeather } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface FireTelemetryDashboardProps {
   telemetry: FireTelemetry;
+  weather: FireWeather | null;
+  weatherFailed: boolean;
 }
 
 const TIME_LOCALE: Record<"en" | "pt", string> = { en: "en-GB", pt: "pt-PT" };
 
-export default function FireTelemetryDashboard({ telemetry }: FireTelemetryDashboardProps) {
+export default function FireTelemetryDashboard({ telemetry, weather, weatherFailed }: FireTelemetryDashboardProps) {
   const { locale, t } = useLocale();
   const telemetryPoints = Array.isArray(telemetry.points) ? telemetry.points : [];
   const data = telemetryPoints.map((point) => ({
@@ -38,6 +40,27 @@ export default function FireTelemetryDashboard({ telemetry }: FireTelemetryDashb
             {t.fireDetail.simulatedLabel}
           </span>
         )}
+      </div>
+
+      <div className="mb-4 rounded-lg border border-sky-400/20 bg-sky-400/5 p-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-sky-200/80">{t.fireDetail.liveConditionsTitle}</p>
+          <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+            {t.fireDetail.liveLabel}
+          </span>
+        </div>
+        {weather ? (
+          <dl className="grid grid-cols-3 gap-2">
+            <WeatherStat label={t.fireDetail.temperatureLabel} value={`${weather.temperatureC.toFixed(1)}°C`} />
+            <WeatherStat label={t.fireDetail.windSpeedLabel} value={`${weather.windSpeedKmh.toFixed(1)} km/h`} />
+            <WeatherStat label={t.fireDetail.windDirectionLabel} value={`${Math.round(weather.windDirectionDeg)}°`} />
+          </dl>
+        ) : (
+          <p className="py-2 text-xs text-foreground/60">
+            {weatherFailed ? t.fireDetail.weatherUnavailable : t.fireDetail.weatherLoading}
+          </p>
+        )}
+        <p className="mt-2 text-[10px] uppercase tracking-wider text-foreground/35">{t.fireDetail.openMeteoSource}</p>
       </div>
 
       <ChartSection title={t.fireDetail.fireProgressionTitle}>
@@ -77,6 +100,15 @@ export default function FireTelemetryDashboard({ telemetry }: FireTelemetryDashb
 
       <p className="mt-3 text-xs leading-5 text-foreground/60">{t.fireDetail.simulatedTelemetryNote}</p>
     </section>
+  );
+}
+
+function WeatherStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border/40 bg-background/25 px-2 py-2">
+      <dt className="text-[10px] uppercase tracking-wide text-foreground/45">{label}</dt>
+      <dd className="mt-1 text-xs font-semibold text-foreground">{value}</dd>
+    </div>
   );
 }
 

@@ -1,6 +1,8 @@
 "use client";
 
-import type { WildfireEvent } from "@/lib/wildfire/types";
+import { useEffect, useMemo, useState } from "react";
+import type { FireWeather, WildfireEvent } from "@/lib/wildfire/types";
+import { createSimulatedTelemetry } from "@/lib/wildfire/telemetry";
 import { formatThousands } from "@/lib/wildfire/format";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireTelemetryDashboard from "./FireTelemetryDashboard";
@@ -21,6 +23,51 @@ const STATUS_BADGE_CLASS: Record<WildfireEvent["status"], string> = {
 
 export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelProps) {
   const { locale, t } = useLocale();
+  const [weather, setWeather] = useState<FireWeather | null>(null);
+  const [weatherFailed, setWeatherFailed] = useState(false);
+  const telemetry = useMemo(
+    () => event.telemetry ?? createSimulatedTelemetry(
+      event.id,
+      event.satelliteDetection?.detectedAt ?? event.lastUpdated,
+      event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 10,
+      event.severity,
+    ),
+    [event],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      latitude: String(event.location.lat),
+      longitude: String(event.location.lng),
+      current_weather: "true",
+    });
+
+    fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Open-Meteo request failed: ${response.status}`);
+        return response.json() as Promise<OpenMeteoResponse>;
+      })
+      .then((payload) => {
+        const current = payload.current_weather;
+        if (!current || !Number.isFinite(current.temperature) || !Number.isFinite(current.windspeed) || !Number.isFinite(current.winddirection)) {
+          throw new Error("Open-Meteo returned incomplete current weather");
+        }
+        setWeather({
+          temperatureC: current.temperature,
+          windSpeedKmh: current.windspeed,
+          windDirectionDeg: current.winddirection,
+          observedAt: current.time,
+        });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        console.error("Unable to load point weather", error);
+        setWeatherFailed(true);
+      });
+
+    return () => controller.abort();
+  }, [event.location.lat, event.location.lng]);
 
   function formatDateTime(iso: string): string {
     // DD/MM/YYYY regardless of language: en-GB and pt-PT both order day-first,
@@ -141,13 +188,22 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
         </div>
       )}
 
-      <FireTelemetryDashboard telemetry={event.telemetry} />
+      <FireTelemetryDashboard telemetry={telemetry} weather={weather} weatherFailed={weatherFailed} />
 
       <div className="mt-auto pt-2">
         <AdSlot variant="panel-rectangle" />
       </div>
     </div>
   );
+}
+
+interface OpenMeteoResponse {
+  current_weather?: {
+    temperature: number;
+    windspeed: number;
+    winddirection: number;
+    time: string;
+  };
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

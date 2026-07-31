@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wildfire-watch-firms-ingest",
+  "main": "workers/firms-ingest.ts",
+  "compatibility_date": "2025-09-23",
+  "workers_dev": true,
+  "kv_namespaces": [
+    {
+      "binding": "FIRMS_CACHE",
+      "id": "6f6588ad3c434c3aad5767d50f91f730"
+    }
+  ],
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
