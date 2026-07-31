@@ -1,5 +1,3 @@
-import "server-only";
-
 import { mulberry32, pick, seededInt, seededRange } from "./random";
 import { createSimulatedTelemetry } from "./telemetry";
 import type {
