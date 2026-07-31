@@ -1,4 +1,5 @@
 import type { WildfireEvent } from "./types";
+import { estimateBurnedAreaHectares, estimatePerimeterRadiusKm } from "./fire-estimation";
 
 /** All heatmap hotspots across every fire, flattened into one FeatureCollection
  * for a single MapLibre heatmap layer (cheap to render at scale). */
@@ -15,17 +16,16 @@ export function eventsToHeatmapGeoJSON(events: WildfireEvent[]): GeoJSON.Feature
   };
 }
 
-const REFERENCE_PERIMETER_KM = 0.65;
 const REFERENCE_PERIMETER_VERTICES = 18;
 
-function referencePerimeter(event: WildfireEvent): GeoJSON.Position[] {
+function referencePerimeter(event: WildfireEvent, radiusKm: number): GeoJSON.Position[] {
   const lngScale = 111 * Math.cos((event.location.lat * Math.PI) / 180);
   const ring = Array.from({ length: REFERENCE_PERIMETER_VERTICES }, (_, index) => {
     const angle = (index / REFERENCE_PERIMETER_VERTICES) * Math.PI * 2;
     const radialVariation = 0.86 + ((index * 7) % 5) * 0.035;
     return [
-      event.location.lng + (Math.cos(angle) * REFERENCE_PERIMETER_KM * radialVariation) / lngScale,
-      event.location.lat + (Math.sin(angle) * REFERENCE_PERIMETER_KM * radialVariation) / 111,
+      event.location.lng + (Math.cos(angle) * radiusKm * radialVariation) / lngScale,
+      event.location.lat + (Math.sin(angle) * radiusKm * radialVariation) / 111,
     ] as GeoJSON.Position;
   });
   return [...ring, ring[0]];
@@ -41,9 +41,14 @@ export function selectedEventToPolygonGeoJSON(
   if (!event) return { type: "FeatureCollection", features: [] };
 
   const measuredPerimeter = event.polygon && event.polygon.length > 2;
+  const frpMw = event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 0;
+  const perimeterRadiusKm = estimatePerimeterRadiusKm(frpMw);
+  const estimatedAreaHectares = event.satelliteDetection
+    ? estimateBurnedAreaHectares(frpMw, event.startedAt)
+    : event.areaHectares;
   const coordinates = measuredPerimeter
     ? event.polygon!.map((point) => [point.lng, point.lat] as GeoJSON.Position)
-    : referencePerimeter(event);
+    : referencePerimeter(event, perimeterRadiusKm);
 
   return {
     type: "FeatureCollection",
@@ -55,6 +60,9 @@ export function selectedEventToPolygonGeoJSON(
         severity: event.severity,
         status: event.status,
         perimeterKind: measuredPerimeter ? "reported" : "reference",
+        frpMw,
+        perimeterRadiusKm,
+        estimatedAreaHectares,
       },
     }],
   };

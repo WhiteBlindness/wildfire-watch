@@ -94,16 +94,7 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
   // back out to the world view once nothing is selected.
   useEffect(() => {
     const map = mapRef.current?.getMap();
-    // `.loaded()` also throws once the underlying map has been torn down
-    // (e.g. a React tree regenerated after an unrelated hydration mismatch
-    // leaves a stale ref) — guard defensively so a camera move never crashes
-    // the app; worst case, this one flyTo is silently skipped.
     if (!map) return;
-    try {
-      if (!map.loaded()) return;
-    } catch {
-      return;
-    }
 
     const selectedEvent = selectedId ? events.find((event) => event.id === selectedId) : null;
     const target = selectedEvent

@@ -35,6 +35,7 @@ const pt: Dictionary = {
     severityLabel: "Severidade",
     areaLabel: "Área ardida",
     notMeasured: "Não medida",
+    estimatedAreaNote: "Estimativa por FRP × tempo decorrido",
     startLabel: "Início",
     containmentEtaLabel: "Contenção prevista",
     containedAtLabel: "Contido em",
@@ -76,7 +77,7 @@ const pt: Dictionary = {
     frpLabel: "Potência radiativa",
     confidenceLabel: "Confiança",
     detectedAtLabel: "Detetado em",
-    referencePerimeterNote: "O contorno no mapa é um perímetro de referência simulado em torno desta anomalia térmica, não um limite de área ardida medido.",
+    referencePerimeterNote: "O contorno no mapa é um perímetro de referência simulado e escalado por FRP, não um limite de área ardida medido.",
   },
   ad: {
     label: "Publicidade",

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FireWeather, WildfireEvent } from "@/lib/wildfire/types";
 import { createSimulatedTelemetry } from "@/lib/wildfire/telemetry";
 import { formatThousands } from "@/lib/wildfire/format";
+import { estimateBurnedAreaHectares } from "@/lib/wildfire/fire-estimation";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireTelemetryDashboard from "./FireTelemetryDashboard";
 import AdSlot from "@/components/ui/AdSlot";
@@ -32,6 +33,12 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
       event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 10,
       event.severity,
     ),
+    [event],
+  );
+  const estimatedAreaHectares = useMemo(
+    () => event.satelliteDetection
+      ? estimateBurnedAreaHectares(event.satelliteDetection.frpMw, event.startedAt)
+      : event.areaHectares,
     [event],
   );
 
@@ -147,7 +154,8 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <Stat
           label={t.fireDetail.areaLabel}
-          value={event.satelliteDetection ? t.fireDetail.notMeasured : `${formatThousands(event.areaHectares)} ha`}
+          value={`${event.satelliteDetection ? "≈ " : ""}${formatThousands(estimatedAreaHectares)} ha`}
+          hint={event.satelliteDetection ? t.fireDetail.estimatedAreaNote : undefined}
         />
         <Stat label={t.fireDetail.startLabel} value={formatDateTime(event.startedAt)} />
         <Stat
@@ -232,11 +240,12 @@ interface OpenMeteoResponse {
   };
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="min-w-0">
       <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/45">{label}</dt>
       <dd className="mt-1 break-words font-mono text-xs font-medium tabular-nums text-foreground">{value}</dd>
+      {hint && <dd className="mt-1 text-[11px] leading-4 text-foreground/45">{hint}</dd>}
     </div>
   );
 }

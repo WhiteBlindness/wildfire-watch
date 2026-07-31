@@ -35,6 +35,7 @@ const en = {
     severityLabel: "Severity",
     areaLabel: "Burned area",
     notMeasured: "Not measured",
+    estimatedAreaNote: "Estimated from FRP × elapsed time",
     startLabel: "Started",
     containmentEtaLabel: "Estimated containment",
     containedAtLabel: "Contained at",
@@ -76,7 +77,7 @@ const en = {
     frpLabel: "Radiative power",
     confidenceLabel: "Confidence",
     detectedAtLabel: "Detected at",
-    referencePerimeterNote: "The map outline is a simulated reference perimeter around this thermal anomaly, not a measured burn boundary.",
+    referencePerimeterNote: "The map outline is a simulated, FRP-scaled reference perimeter around this thermal anomaly, not a measured burn boundary.",
   },
   ad: {
     label: "Advertisement",
