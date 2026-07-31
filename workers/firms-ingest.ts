@@ -5,7 +5,7 @@ const FIRMS_SOURCE = "VIIRS_SNPP_NRT";
 const FIRMS_DAY_RANGE = 1;
 const MAX_POINTS = 6_000;
 
-interface Env {
+export interface FirmsIngestEnv {
   FIRMS_CACHE: FirmsKvNamespace;
   FIRMS_MAP_KEY: string;
 }
@@ -115,7 +115,7 @@ function selectPoints(rows: ParsedRow[]): CachedFirmsPoint[] {
     .map(({ point }) => point);
 }
 
-async function refreshCache(env: Env): Promise<FirmsCachePayload> {
+export async function refreshFirmsCache(env: FirmsIngestEnv): Promise<FirmsCachePayload> {
   if (!env.FIRMS_MAP_KEY) throw new Error("FIRMS_MAP_KEY is not configured");
   const response = await fetch(
     `${FIRMS_BASE_URL}/${env.FIRMS_MAP_KEY}/${FIRMS_SOURCE}/world/${FIRMS_DAY_RANGE}`,
@@ -144,30 +144,3 @@ async function refreshCache(env: Env): Promise<FirmsCachePayload> {
   });
   return payload;
 }
-
-const firmsIngestWorker = {
-  async scheduled(_controller: unknown, env: Env): Promise<void> {
-    await refreshCache(env);
-  },
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    if (request.method === "GET" && url.pathname === "/health") {
-      const cached = await env.FIRMS_CACHE.get<FirmsCachePayload>(FIRMS_CACHE_KEY, "json");
-      return Response.json({
-        ok: Boolean(cached?.points.length),
-        generatedAt: cached?.generatedAt ?? null,
-        count: cached?.points.length ?? 0,
-      });
-    }
-    if (request.method === "POST" && url.pathname === "/refresh") {
-      if (request.headers.get("x-firms-refresh-key") !== env.FIRMS_MAP_KEY) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-      const payload = await refreshCache(env);
-      return Response.json({ ok: true, generatedAt: payload.generatedAt, count: payload.points.length });
-    }
-    return new Response("Not found", { status: 404 });
-  },
-};
-
-export default firmsIngestWorker;
