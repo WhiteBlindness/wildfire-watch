@@ -122,6 +122,10 @@ export interface FireWeather {
   temperatureC: number;
   windSpeedKmh: number;
   windDirectionDeg: number;
+  windGustKmh: number;
+  relativeHumidityPct: number;
+  precipitationMm: number;
+  precipitationProbabilityPct: number;
   observedAt: string;
 }
 

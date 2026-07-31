@@ -40,7 +40,16 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
     const params = new URLSearchParams({
       latitude: String(event.location.lat),
       longitude: String(event.location.lng),
-      current_weather: "true",
+      current: [
+        "temperature_2m",
+        "relative_humidity_2m",
+        "precipitation",
+        "precipitation_probability",
+        "wind_speed_10m",
+        "wind_direction_10m",
+        "wind_gusts_10m",
+      ].join(","),
+      wind_speed_unit: "kmh",
     });
 
     fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal: controller.signal })
@@ -49,14 +58,27 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
         return response.json() as Promise<OpenMeteoResponse>;
       })
       .then((payload) => {
-        const current = payload.current_weather;
-        if (!current || !Number.isFinite(current.temperature) || !Number.isFinite(current.windspeed) || !Number.isFinite(current.winddirection)) {
+        const current = payload.current;
+        if (
+          !current
+          || !Number.isFinite(current.temperature_2m)
+          || !Number.isFinite(current.wind_speed_10m)
+          || !Number.isFinite(current.wind_direction_10m)
+          || !Number.isFinite(current.wind_gusts_10m)
+          || !Number.isFinite(current.relative_humidity_2m)
+          || !Number.isFinite(current.precipitation)
+          || !Number.isFinite(current.precipitation_probability)
+        ) {
           throw new Error("Open-Meteo returned incomplete current weather");
         }
         setWeather({
-          temperatureC: current.temperature,
-          windSpeedKmh: current.windspeed,
-          windDirectionDeg: current.winddirection,
+          temperatureC: current.temperature_2m,
+          windSpeedKmh: current.wind_speed_10m,
+          windDirectionDeg: current.wind_direction_10m,
+          windGustKmh: current.wind_gusts_10m,
+          relativeHumidityPct: current.relative_humidity_2m,
+          precipitationMm: current.precipitation,
+          precipitationProbabilityPct: current.precipitation_probability,
           observedAt: current.time,
         });
       })
@@ -82,11 +104,11 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
   }
 
   return (
-    <div className="flex h-full flex-col gap-4 p-5">
+    <div className="flex h-full flex-col gap-4 p-4 sm:p-5">
       <button
         type="button"
         onClick={onClose}
-        className="-mx-1 -my-2 flex min-h-11 items-center gap-1 self-start px-1 py-2 text-xs font-medium text-foreground/60 hover:text-foreground"
+        className="-mx-2 -my-2 flex min-h-11 items-center gap-1.5 self-start rounded-lg px-2 py-2 text-xs font-medium text-foreground/55 transition-[color,background-color,transform] duration-200 hover:bg-surface-muted/60 hover:text-foreground active:translate-x-[-2px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
       >
         <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2}>
           <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
@@ -96,8 +118,8 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
 
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">{event.name}</h2>
-          <p className="text-sm text-foreground/60">
+          <h2 className="text-lg font-semibold leading-snug tracking-[-0.02em] text-foreground">{event.name}</h2>
+          <p className="mt-1 text-sm text-foreground/55">
             {event.region}, {event.country}
           </p>
         </div>
@@ -105,7 +127,7 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
           type="button"
           onClick={onClose}
           aria-label={t.fireDetail.closeLabel}
-          className="-mr-1 -mt-1 flex h-11 w-11 items-center justify-center rounded-full border border-border text-foreground/60 hover:text-foreground"
+          className="-mr-1 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-muted/55 text-foreground/55 ring-1 ring-inset ring-border/70 transition-[color,background-color,transform] duration-200 hover:bg-surface-muted hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
             <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
@@ -149,7 +171,7 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
       </dl>
 
       {event.satelliteDetection && (
-        <div className="rounded-lg border border-red-500/25 bg-red-500/8 p-3">
+        <div className="rounded-xl bg-red-500/8 p-3.5 ring-1 ring-inset ring-red-500/25">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-300/80">
             {t.fireDetail.satelliteTelemetryTitle}
           </h3>
@@ -164,7 +186,7 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
       )}
 
       {event.forces && (
-        <div className="rounded-lg border border-border bg-surface-muted/50 p-3">
+        <div className="rounded-xl bg-surface-muted/50 p-3.5 ring-1 ring-inset ring-border/70">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/50">
             {t.fireDetail.forcesTitle}
           </h3>
@@ -198,19 +220,23 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
 }
 
 interface OpenMeteoResponse {
-  current_weather?: {
-    temperature: number;
-    windspeed: number;
-    winddirection: number;
+  current?: {
+    temperature_2m: number;
+    relative_humidity_2m: number;
+    precipitation: number;
+    precipitation_probability: number;
+    wind_speed_10m: number;
+    wind_direction_10m: number;
+    wind_gusts_10m: number;
     time: string;
   };
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt className="text-xs text-foreground/50">{label}</dt>
-      <dd className="font-medium text-foreground">{value}</dd>
+    <div className="min-w-0">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/45">{label}</dt>
+      <dd className="mt-1 break-words font-mono text-xs font-medium tabular-nums text-foreground">{value}</dd>
     </div>
   );
 }
