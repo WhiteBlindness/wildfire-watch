@@ -15,20 +15,48 @@ export function eventsToHeatmapGeoJSON(events: WildfireEvent[]): GeoJSON.Feature
   };
 }
 
-/** Burned-area / fire-front perimeters as polygons, one feature per fire. */
-export function eventsToPolygonGeoJSON(events: WildfireEvent[]): GeoJSON.FeatureCollection {
+const REFERENCE_PERIMETER_KM = 0.65;
+const REFERENCE_PERIMETER_VERTICES = 18;
+
+function referencePerimeter(event: WildfireEvent): GeoJSON.Position[] {
+  const lngScale = 111 * Math.cos((event.location.lat * Math.PI) / 180);
+  const ring = Array.from({ length: REFERENCE_PERIMETER_VERTICES }, (_, index) => {
+    const angle = (index / REFERENCE_PERIMETER_VERTICES) * Math.PI * 2;
+    const radialVariation = 0.86 + ((index * 7) % 5) * 0.035;
+    return [
+      event.location.lng + (Math.cos(angle) * REFERENCE_PERIMETER_KM * radialVariation) / lngScale,
+      event.location.lat + (Math.sin(angle) * REFERENCE_PERIMETER_KM * radialVariation) / 111,
+    ] as GeoJSON.Position;
+  });
+  return [...ring, ring[0]];
+}
+
+/** Show one perimeter only after a fire is selected. FIRMS points receive a
+ * reference outline, never a claimed measured burn boundary. */
+export function selectedEventToPolygonGeoJSON(
+  events: WildfireEvent[],
+  selectedId: string | null,
+): GeoJSON.FeatureCollection {
+  const event = selectedId ? events.find((item) => item.id === selectedId) : null;
+  if (!event) return { type: "FeatureCollection", features: [] };
+
+  const measuredPerimeter = event.polygon && event.polygon.length > 2;
+  const coordinates = measuredPerimeter
+    ? event.polygon!.map((point) => [point.lng, point.lat] as GeoJSON.Position)
+    : referencePerimeter(event);
+
   return {
     type: "FeatureCollection",
-    features: events
-      .filter((event) => event.polygon && event.polygon.length > 2)
-      .map<GeoJSON.Feature>((event) => ({
-        type: "Feature",
-        geometry: {
-          type: "Polygon",
-          coordinates: [event.polygon!.map((p) => [p.lng, p.lat])],
-        },
-        properties: { fireId: event.id, severity: event.severity, status: event.status },
-      })),
+    features: [{
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [coordinates] },
+      properties: {
+        fireId: event.id,
+        severity: event.severity,
+        status: event.status,
+        perimeterKind: measuredPerimeter ? "reported" : "reference",
+      },
+    }],
   };
 }
 

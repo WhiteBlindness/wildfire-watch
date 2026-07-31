@@ -77,7 +77,10 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
       </div>
 
       <dl className="grid grid-cols-2 gap-3 text-sm">
-        <Stat label={t.fireDetail.areaLabel} value={`${formatThousands(event.areaHectares)} ha`} />
+        <Stat
+          label={t.fireDetail.areaLabel}
+          value={event.satelliteDetection ? t.fireDetail.notMeasured : `${formatThousands(event.areaHectares)} ha`}
+        />
         <Stat label={t.fireDetail.startLabel} value={formatDateTime(event.startedAt)} />
         <Stat
           label={event.status === "active" ? t.fireDetail.containmentEtaLabel : t.fireDetail.containedAtLabel}
@@ -98,6 +101,21 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
           />
         )}
       </dl>
+
+      {event.satelliteDetection && (
+        <div className="rounded-lg border border-red-500/25 bg-red-500/8 p-3">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-300/80">
+            {t.fireDetail.satelliteTelemetryTitle}
+          </h3>
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            <Stat label={t.fireDetail.coordinatesLabel} value={`${event.location.lat.toFixed(4)}, ${event.location.lng.toFixed(4)}`} />
+            <Stat label={t.fireDetail.frpLabel} value={`${event.satelliteDetection.frpMw.toFixed(1)} MW`} />
+            <Stat label={t.fireDetail.confidenceLabel} value={`${Math.round(event.satelliteDetection.confidencePct)}%`} />
+            <Stat label={t.fireDetail.detectedAtLabel} value={formatDateTime(event.satelliteDetection.detectedAt)} />
+          </dl>
+          <p className="mt-3 text-xs leading-5 text-foreground/60">{t.fireDetail.referencePerimeterNote}</p>
+        </div>
+      )}
 
       {event.forces && (
         <div className="rounded-lg border border-border bg-surface-muted/50 p-3">

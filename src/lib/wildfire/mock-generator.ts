@@ -207,6 +207,7 @@ function toEvent(seed: FireSeed, index: number): WildfireEvent {
     },
     evolution,
     maxFrpMw: null,
+    satelliteDetection: null,
     source: "mock",
     lastUpdated: now.toISOString(),
   };

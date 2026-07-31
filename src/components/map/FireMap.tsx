@@ -5,7 +5,7 @@ import Map, { Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-
 import type { MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { WildfireEvent } from "@/lib/wildfire/types";
-import { eventsToHeatmapGeoJSON, eventsToMarkerGeoJSON, eventsToPolygonGeoJSON } from "@/lib/wildfire/geojson";
+import { eventsToHeatmapGeoJSON, eventsToMarkerGeoJSON, selectedEventToPolygonGeoJSON } from "@/lib/wildfire/geojson";
 import { SEVERITY_COLOR } from "@/lib/wildfire/colors";
 
 // Free, no-API-key vector basemaps from CARTO — dark-matter fits the cinematic
@@ -30,18 +30,19 @@ const SATELLITE_SOURCE_ID = "satellite-src";
 const SATELLITE_LAYER_ID = "satellite-layer";
 
 const MARKER_LAYER_ID = "fire-markers";
+const MARKER_HIT_AREA_LAYER_ID = "fire-marker-hit-area";
 const POLYGON_FILL_LAYER_ID = "fire-polygons-fill";
 const HEATMAP_LAYER_ID = "fire-heatmap";
 // Every layer whose features carry a `fireId` property — clicking or
 // hovering any of them (marker, burned-area fill, or heatmap core) selects
 // the fire, not just the small marker dot.
-const INTERACTIVE_LAYER_IDS = [MARKER_LAYER_ID, POLYGON_FILL_LAYER_ID, HEATMAP_LAYER_ID];
+const INTERACTIVE_LAYER_IDS = [MARKER_HIT_AREA_LAYER_ID, MARKER_LAYER_ID, POLYGON_FILL_LAYER_ID, HEATMAP_LAYER_ID];
 
 // Centered on Iberia/the Atlantic rather than the equator — frames Europe,
 // North Africa, and the Atlantic on desktop instead of cutting Europe off
 // to one side. Also the "Voltar ao mapa global" fly-back target below.
 const WORLD_VIEW = { longitude: -9.0, latitude: 39.0, zoom: 3 };
-const FIRE_DETAIL_ZOOM = 10;
+const FIRE_DETAIL_ZOOM = 12;
 // Cinematic, not instant — essential:true keeps the animation even under
 // prefers-reduced-motion, since the camera move here carries real meaning
 // (which fire is now in view), not just decoration.
@@ -59,7 +60,7 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const heatmapData = useMemo(() => eventsToHeatmapGeoJSON(events), [events]);
-  const polygonData = useMemo(() => eventsToPolygonGeoJSON(events), [events]);
+  const polygonData = useMemo(() => selectedEventToPolygonGeoJSON(events, selectedId), [events, selectedId]);
   const markerData = useMemo(() => eventsToMarkerGeoJSON(events), [events]);
 
   const handleClick = useCallback(
@@ -248,6 +249,12 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
       </Source>
 
       <Source id="fire-markers-src" type="geojson" data={markerData}>
+        {/* Invisible 44px hit target keeps dense points easy to select on touch. */}
+        <Layer
+          id={MARKER_HIT_AREA_LAYER_ID}
+          type="circle"
+          paint={{ "circle-radius": 22, "circle-opacity": 0, "circle-stroke-opacity": 0 }}
+        />
         <Layer
           id={MARKER_LAYER_ID}
           type="circle"

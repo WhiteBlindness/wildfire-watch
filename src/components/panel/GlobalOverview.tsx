@@ -15,6 +15,7 @@ export default function GlobalOverview({ events, onSelect }: GlobalOverviewProps
   const { t } = useLocale();
   const totalFocos = events.length;
   const totalAreaHectares = events.reduce((sum, event) => sum + event.areaHectares, 0);
+  const hasMeasuredArea = events.some((event) => !event.satelliteDetection && event.areaHectares > 0);
   const maxFrpMw = events.reduce<number | null>((max, event) => {
     if (event.maxFrpMw == null) return max;
     return max == null ? event.maxFrpMw : Math.max(max, event.maxFrpMw);
@@ -40,7 +41,7 @@ export default function GlobalOverview({ events, onSelect }: GlobalOverviewProps
         />
         <MetricCard
           label={t.overview.metricArea}
-          value={`${formatThousands(totalAreaHectares)} ha`}
+          value={hasMeasuredArea ? `${formatThousands(totalAreaHectares)} ha` : t.fireDetail.notMeasured}
           tone="neutral"
         />
       </div>

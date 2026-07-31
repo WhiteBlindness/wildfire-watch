@@ -113,7 +113,7 @@ export default function FireIntensityChart({ events, onSelect }: FireIntensityCh
             <button
               type="button"
               onClick={() => onSelect(row.id)}
-              className="sr-only rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground focus:not-sr-only focus:outline-none focus:ring-2 focus:ring-rose-500"
+              className="sr-only min-h-11 min-w-11 rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground focus:not-sr-only focus:outline-none focus:ring-2 focus:ring-rose-500"
             >
               {row.fullLabel} — {formatThousands(row.frp)} MW
             </button>

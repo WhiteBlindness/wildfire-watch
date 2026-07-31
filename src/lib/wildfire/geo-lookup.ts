@@ -1,11 +1,7 @@
 import "server-only";
 
-// FIRMS hotspots carry no place name, only coordinates. This is a best-effort
-// bounding-box lookup for display purposes only — not a geocoding service —
-// so real-data events can still show a readable country/region instead of
-// raw coordinates. Falls back to a rough continent guess, never invents a
-// precise place name it doesn't have evidence for.
-
+// FIRMS hotspots carry coordinates rather than administrative names. This is
+// a best-effort display lookup, not a geocoding service.
 interface CountryBox {
   country: string;
   region: string;
@@ -30,21 +26,14 @@ const COUNTRY_BOXES: CountryBox[] = [
   { country: "Indonésia", region: "Arquipélago", west: 95, south: -11, east: 141, north: 6 },
 ];
 
-function continentGuess(lat: number, lng: number): { country: string; region: string } {
-  if (lat > 35 && lng > -15 && lng < 45) return { country: "Europa", region: "Região não identificada" };
-  if (lng < -30 && lat > 5) return { country: "América do Norte", region: "Região não identificada" };
-  if (lng < -30 && lat <= 5) return { country: "América do Sul", region: "Região não identificada" };
-  if (lng >= -20 && lng < 55 && lat <= 35) return { country: "África", region: "Região não identificada" };
-  if (lng >= 55 && lat > -10) return { country: "Ásia", region: "Região não identificada" };
-  if (lng >= 95 && lat <= -10) return { country: "Oceania", region: "Região não identificada" };
-  return { country: "Localização remota", region: "Região não identificada" };
-}
-
 /** Best-effort country/region label from a coordinate, for display only. */
 export function lookupPlace(lat: number, lng: number): { country: string; region: string } {
   const hit = COUNTRY_BOXES.find(
     (box) => lng >= box.west && lng <= box.east && lat >= box.south && lat <= box.north,
   );
   if (hit) return { country: hit.country, region: hit.region };
-  return continentGuess(lat, lng);
+
+  // A continent is too broad to be useful once every anomaly is an individual
+  // point. The detail panel supplies precise coordinates as the fallback.
+  return { country: "Localização aproximada", region: "Sem correspondência territorial" };
 }

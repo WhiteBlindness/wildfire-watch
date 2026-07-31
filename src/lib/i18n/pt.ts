@@ -1,8 +1,5 @@
 import type { Dictionary } from "./types";
 
-// European Portuguese (PT-PT), Acordo Ortográfico de 1990. Not Brazilian
-// Portuguese: no gerund for continuous actions, "estar a + infinitivo" where
-// applicable, established EP vocabulary (deteção, não "detecção").
 const pt: Dictionary = {
   topBar: {
     themeToggleLabel: "Alternar entre modo claro e escuro",
@@ -33,6 +30,7 @@ const pt: Dictionary = {
     backToGlobalMap: "Voltar ao mapa global",
     severityLabel: "Severidade",
     areaLabel: "Área ardida",
+    notMeasured: "Não medida",
     startLabel: "Início",
     containmentEtaLabel: "Contenção prevista",
     containedAtLabel: "Contido em",
@@ -45,6 +43,12 @@ const pt: Dictionary = {
     aidActive: "Ajuda internacional ativa",
     aidRequested: "Ajuda internacional solicitada",
     evolutionTitle: "Evolução da área ardida",
+    satelliteTelemetryTitle: "Telemetria de satélite",
+    coordinatesLabel: "Coordenadas",
+    frpLabel: "Potência radiativa",
+    confidenceLabel: "Confiança",
+    detectedAtLabel: "Detetado em",
+    referencePerimeterNote: "O contorno no mapa é um perímetro de referência simulado em torno desta anomalia térmica, não um limite de área ardida medido.",
     provenanceNote:
       "Fonte: deteções de satélite ({source}). Os meios no terreno, o vento e o histórico não são observáveis a partir de deteções térmicas, por isso não são apresentados.",
   },
@@ -57,9 +61,8 @@ const pt: Dictionary = {
     personnelLabel: "Efetivos",
   },
   intensityChart: {
-    // Sentence case, no anglicism ("Top" avoided per the PT-PT style rules).
     title: "Principais focos por intensidade",
-    subtitle: "Complexos ativos mais intensos, por energia radiativa máxima",
+    subtitle: "Focos ativos mais intensos, por energia radiativa máxima",
     yAxisLabel: "Energia radiativa (MW)",
     tooltipFrpLabel: "Energia radiativa máxima",
     tooltipDetectionsLabel: "Deteções",

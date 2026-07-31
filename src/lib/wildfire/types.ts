@@ -18,6 +18,16 @@ export interface HeatmapPoint extends GeoPoint {
   detectedAt: string;
 }
 
+/** Telemetry emitted with one satellite thermal-anomaly detection. */
+export interface SatelliteDetection {
+  /** Fire Radiative Power measured by the sensor, in megawatts. */
+  frpMw: number;
+  /** Provider-normalized confidence, 0-100. */
+  confidencePct: number;
+  /** Satellite acquisition time, ISO 8601. */
+  detectedAt: string;
+}
+
 /** Burned-area / fire-front polygon, outer ring only, [lng, lat] pairs, closed ring. */
 export type FirePolygon = GeoPoint[];
 
@@ -82,6 +92,9 @@ export interface WildfireEvent {
    * physical measurement satellite sources provide. Null for sources (mock)
    * that have no such sensor reading. */
   maxFrpMw: number | null;
+
+  /** Present only when this record represents one measured thermal anomaly. */
+  satelliteDetection: SatelliteDetection | null;
 
   /** Which upstream feed produced this record. */
   source: "mock" | "firms" | "effis" | "civil-protection";
