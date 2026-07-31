@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import dynamic from "next/dynamic";
 import TopBar from "@/components/layout/TopBar";
@@ -9,6 +9,7 @@ import SidePanel from "@/components/panel/SidePanel";
 import AdSlot from "@/components/ui/AdSlot";
 import { firmsAdapter } from "@/lib/wildfire/firms-adapter";
 import type { WildfireEvent } from "@/lib/wildfire/types";
+import type { BasemapMode } from "@/components/ui/BasemapToggle";
 
 // MapLibre touches `window` on import, so the map must never render during SSR.
 const FireMap = dynamic(() => import("@/components/map/FireMap"), { ssr: false });
@@ -22,6 +23,8 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
   const [events, setEvents] = useState<WildfireEvent[]>(initialEvents);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isPanelMinimized, setIsPanelMinimized] = useState(true);
+  const [selectedCountry, setSelectedCountry] = useState("global");
+  const [basemapMode, setBasemapMode] = useState<BasemapMode>("satellite");
 
   // The page request remains tiny: hotspot data arrives from the Worker KV
   // endpoint after hydration. NASA is only contacted by the hourly ingestor.
@@ -38,12 +41,31 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
     };
   }, [initialEvents]);
 
-  const selectedEvent = events.find((event) => event.id === selectedId) ?? null;
+  const countries = useMemo(
+    () => [...new Set(events
+      .map((event) => event.country)
+      .filter((country) => country && !country.includes("unmatched")))]
+      .sort((a, b) => a.localeCompare(b, "pt")),
+    [events],
+  );
+  const filteredEvents = useMemo(
+    () => selectedCountry === "global"
+      ? events
+      : events.filter((event) => event.country === selectedCountry),
+    [events, selectedCountry],
+  );
+  const selectedEvent = filteredEvents.find((event) => event.id === selectedId) ?? null;
   const mapTheme = resolvedTheme === "light" ? "light" : "dark";
 
   function handleSelect(id: string | null): void {
     setSelectedId(id);
     if (id) setIsPanelMinimized(false);
+  }
+
+  function handleCountryChange(country: string): void {
+    setSelectedCountry(country);
+    setSelectedId(null);
+    setIsPanelMinimized(false);
   }
 
   return (
@@ -59,10 +81,18 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
           growing from flex/percentage rules, so its size never depends on
           sibling layout, and it owns the bottom of the stacking order. */}
       <div className="absolute inset-0 z-0">
-        <FireMap events={events} selectedId={selectedId} onSelect={handleSelect} theme={mapTheme} />
+        <FireMap
+          events={filteredEvents}
+          perimeterEvents={events}
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          theme={mapTheme}
+          basemapMode={basemapMode}
+          countryScope={selectedCountry}
+        />
       </div>
 
-      <TopBar />
+      <TopBar basemapMode={basemapMode} onBasemapChange={setBasemapMode} />
 
       {/* The side panel is permanently docked now (Global Overview when
           nothing is selected) — desktop only, and kept clear of its 400px
@@ -75,12 +105,15 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
       </div>
 
       <SidePanel
-        events={events}
+        events={filteredEvents}
         selectedEvent={selectedEvent}
         isMinimized={isPanelMinimized}
         onSelect={(id) => handleSelect(id)}
         onClose={() => handleSelect(null)}
         onToggleMinimized={() => setIsPanelMinimized((current) => !current)}
+        countries={countries}
+        selectedCountry={selectedCountry}
+        onCountryChange={handleCountryChange}
       />
     </main>
   );

@@ -134,6 +134,34 @@ body {
   height: 100dvh;
 }
 
+@media (min-width: 768px) {
+  .mission-brand-chip {
+    width: auto;
+    height: auto;
+    padding: 0.5rem 1rem;
+  }
+
+  .mission-brand-label {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    clip-path: none;
+    white-space: normal;
+  }
+
+  .mission-top-controls {
+    margin-right: 416px;
+  }
+
+  .mission-basemap-label {
+    display: inline;
+  }
+}
+
 body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   overflow: hidden;
@@ -166,71 +194,6 @@ body {
 @media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
   .mission-panel-shell {
     animation: mission-panel-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-}
-
-.telemetry-range {
-  appearance: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.telemetry-range::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 9999px;
-  background: linear-gradient(
-    to right,
-    #ef4444 0%,
-    #ef4444 var(--timeline-progress),
-    color-mix(in srgb, currentColor 14%, transparent) var(--timeline-progress),
-    color-mix(in srgb, currentColor 14%, transparent) 100%
-  );
-}
-
-.telemetry-range::-webkit-slider-thumb {
-  width: 18px;
-  height: 18px;
-  margin-top: -7px;
-  appearance: none;
-  border: 3px solid #ef4444;
-  border-radius: 9999px;
-  background: var(--surface);
-  box-shadow: 0 3px 10px rgb(0 0 0 / 35%);
-  transition: transform 160ms ease-out, box-shadow 160ms ease-out;
-}
-
-.telemetry-range:hover::-webkit-slider-thumb {
-  transform: scale(1.1);
-}
-
-.telemetry-range:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px rgb(239 68 68 / 22%), 0 3px 10px rgb(0 0 0 / 35%);
-}
-
-.telemetry-range::-moz-range-track {
-  height: 4px;
-  border-radius: 9999px;
-  background: color-mix(in srgb, currentColor 14%, transparent);
-}
-
-.telemetry-range::-moz-range-progress {
-  height: 4px;
-  border-radius: 9999px;
-  background: #ef4444;
-}
-
-.telemetry-range::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 3px solid #ef4444;
-  border-radius: 9999px;
-  background: var(--surface);
-  box-shadow: 0 3px 10px rgb(0 0 0 / 35%);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .telemetry-range::-webkit-slider-thumb {
-    transition: none;
   }
 }
 

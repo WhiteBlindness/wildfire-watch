@@ -9,13 +9,20 @@ import FireIntensityChart from "./FireIntensityChart";
 interface GlobalOverviewProps {
   events: WildfireEvent[];
   onSelect: (id: string) => void;
+  countries: string[];
+  selectedCountry: string;
+  onCountryChange: (country: string) => void;
 }
 
-export default function GlobalOverview({ events, onSelect }: GlobalOverviewProps) {
+export default function GlobalOverview({
+  events,
+  onSelect,
+  countries,
+  selectedCountry,
+  onCountryChange,
+}: GlobalOverviewProps) {
   const { t } = useLocale();
   const totalFocos = events.length;
-  const totalAreaHectares = events.reduce((sum, event) => sum + event.areaHectares, 0);
-  const hasMeasuredArea = events.some((event) => !event.satelliteDetection && event.areaHectares > 0);
   const maxFrpMw = events.reduce<number | null>((max, event) => {
     if (event.maxFrpMw == null) return max;
     return max == null ? event.maxFrpMw : Math.max(max, event.maxFrpMw);
@@ -28,6 +35,20 @@ export default function GlobalOverview({ events, onSelect }: GlobalOverviewProps
         <p className="text-sm text-foreground/60">{t.overview.subtitle}</p>
       </div>
 
+      <label className="block">
+        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/50">
+          {t.overview.countryLabel}
+        </span>
+        <select
+          value={selectedCountry}
+          onChange={(event) => onCountryChange(event.currentTarget.value)}
+          className="h-11 w-full rounded-xl border border-border/70 bg-surface/90 px-3 text-base font-medium text-foreground shadow-[0_8px_24px_rgba(0,0,0,0.16)] outline-none transition-colors hover:border-foreground/25 focus-visible:ring-2 focus-visible:ring-red-500/70 sm:text-sm"
+        >
+          <option value="global">{t.overview.globalOption}</option>
+          {countries.map((country) => <option key={country} value={country}>{country}</option>)}
+        </select>
+      </label>
+
       <div className="grid grid-cols-1 gap-3">
         <MetricCard
           label={t.overview.metricFoci}
@@ -38,11 +59,6 @@ export default function GlobalOverview({ events, onSelect }: GlobalOverviewProps
           label={t.overview.metricMaxFrp}
           value={maxFrpMw != null ? `${formatThousands(maxFrpMw)} MW` : "—"}
           tone="critical"
-        />
-        <MetricCard
-          label={t.overview.metricArea}
-          value={hasMeasuredArea ? `${formatThousands(totalAreaHectares)} ha` : t.fireDetail.notMeasured}
-          tone="neutral"
         />
       </div>
 

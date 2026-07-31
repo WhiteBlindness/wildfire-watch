@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { WildfireEvent } from "@/lib/wildfire/types";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
@@ -13,6 +14,9 @@ interface SidePanelProps {
   onSelect: (id: string) => void;
   onClose: () => void;
   onToggleMinimized: () => void;
+  countries: string[];
+  selectedCountry: string;
+  onCountryChange: (country: string) => void;
 }
 
 export default function SidePanel({
@@ -22,8 +26,19 @@ export default function SidePanel({
   onSelect,
   onClose,
   onToggleMinimized,
+  countries,
+  selectedCountry,
+  onCountryChange,
 }: SidePanelProps) {
   const { t } = useLocale();
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)");
+    const update = () => setIsDesktop(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   // Always docked — "Mission Control" reads as a permanent instrument, not a
   // modal that appears/disappears. Only the content and the mobile sheet's
   // height change between the global dashboard and a single fire's detail.
@@ -55,11 +70,17 @@ export default function SidePanel({
 
       <div id="mission-control-panel-content" className="min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-smooth">
         <div key={selectedEvent?.id ?? "overview"} className="min-h-full motion-safe:animate-[panel-content-enter_280ms_ease-out_both]">
-          {selectedEvent ? (
+          {isDesktop || !isMinimized ? selectedEvent ? (
             <FireDetailsPanel event={selectedEvent} onClose={onClose} />
           ) : (
-            <GlobalOverview events={events} onSelect={onSelect} />
-          )}
+            <GlobalOverview
+              events={events}
+              onSelect={onSelect}
+              countries={countries}
+              selectedCountry={selectedCountry}
+              onCountryChange={onCountryChange}
+            />
+          ) : null}
         </div>
       </div>
     </aside>

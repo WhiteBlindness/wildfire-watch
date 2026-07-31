@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { FireWeather, WildfireEvent } from "@/lib/wildfire/types";
-import { createSimulatedTelemetry } from "@/lib/wildfire/telemetry";
 import { formatThousands } from "@/lib/wildfire/format";
 import { estimateBurnedAreaHectares } from "@/lib/wildfire/fire-estimation";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
@@ -16,25 +15,10 @@ interface FireDetailsPanelProps {
 
 const DATE_LOCALE: Record<"en" | "pt", string> = { en: "en-GB", pt: "pt-PT" };
 
-const STATUS_BADGE_CLASS: Record<WildfireEvent["status"], string> = {
-  active: "bg-red-500/15 text-red-400 ring-1 ring-red-500/40",
-  contained: "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/40",
-  extinguished: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/40",
-};
-
 export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelProps) {
   const { locale, t } = useLocale();
   const [weather, setWeather] = useState<FireWeather | null>(null);
   const [weatherFailed, setWeatherFailed] = useState(false);
-  const telemetry = useMemo(
-    () => event.telemetry ?? createSimulatedTelemetry(
-      event.id,
-      event.satelliteDetection?.detectedAt ?? event.lastUpdated,
-      event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 10,
-      event.severity,
-    ),
-    [event],
-  );
   const estimatedAreaHectares = useMemo(
     () => event.satelliteDetection
       ? estimateBurnedAreaHectares(event.satelliteDetection.frpMw, event.startedAt)
@@ -127,7 +111,7 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
         <div>
           <h2 className="text-lg font-semibold leading-snug tracking-[-0.02em] text-foreground">{event.name}</h2>
           <p className="mt-1 text-sm text-foreground/55">
-            {event.region}, {event.country}
+            {event.region === event.country ? event.country : `${event.region}, ${event.country}`}
           </p>
         </div>
         <button
@@ -142,15 +126,6 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-2 text-xs font-medium">
-        <span className={`rounded-full px-2.5 py-1 ${STATUS_BADGE_CLASS[event.status]}`}>
-          {t.status[event.status]}
-        </span>
-        <span className="rounded-full bg-surface-muted px-2.5 py-1 text-foreground/70 ring-1 ring-border">
-          {t.fireDetail.severityLabel}: {t.legend[event.severity]}
-        </span>
-      </div>
-
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <Stat
           label={t.fireDetail.areaLabel}
@@ -158,24 +133,6 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
           hint={event.satelliteDetection ? t.fireDetail.estimatedAreaNote : undefined}
         />
         <Stat label={t.fireDetail.startLabel} value={formatDateTime(event.startedAt)} />
-        <Stat
-          label={event.status === "active" ? t.fireDetail.containmentEtaLabel : t.fireDetail.containedAtLabel}
-          value={
-            event.status === "active"
-              ? event.estimatedContainmentAt
-                ? formatDateTime(event.estimatedContainmentAt)
-                : "—"
-              : event.containedAt
-                ? formatDateTime(event.containedAt)
-                : "—"
-          }
-        />
-        {event.wind && (
-          <Stat
-            label={t.fireDetail.windLabel}
-            value={`${event.wind.speedKmh} km/h, ${event.wind.directionDeg}°`}
-          />
-        )}
       </dl>
 
       {event.satelliteDetection && (
@@ -193,32 +150,7 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
         </div>
       )}
 
-      {event.forces && (
-        <div className="rounded-xl bg-surface-muted/50 p-3.5 ring-1 ring-inset ring-border/70">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/50">
-            {t.fireDetail.forcesTitle}
-          </h3>
-          <dl className="grid grid-cols-2 gap-3 text-sm">
-            <Stat label={t.fireDetail.firefightersLabel} value={formatThousands(event.forces.firefighters)} />
-            <Stat label={t.fireDetail.vehiclesLabel} value={formatThousands(event.forces.vehicles)} />
-            <Stat label={t.fireDetail.planesLabel} value={String(event.forces.aircraft.planes)} />
-            <Stat label={t.fireDetail.helicoptersLabel} value={String(event.forces.aircraft.helicopters)} />
-          </dl>
-        </div>
-      )}
-
-      {event.internationalAid?.requested && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
-          <p className="font-medium text-amber-400">
-            {event.internationalAid.active ? t.fireDetail.aidActive : t.fireDetail.aidRequested}
-          </p>
-          {event.internationalAid.countries.length > 0 && (
-            <p className="mt-1 text-foreground/70">{event.internationalAid.countries.join(", ")}</p>
-          )}
-        </div>
-      )}
-
-      <FireTelemetryDashboard telemetry={telemetry} weather={weather} weatherFailed={weatherFailed} />
+      <FireTelemetryDashboard weather={weather} weatherFailed={weatherFailed} />
 
       <div className="mt-auto pt-2">
         <AdSlot variant="panel-rectangle" />

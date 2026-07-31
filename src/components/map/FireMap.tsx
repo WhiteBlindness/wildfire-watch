@@ -7,6 +7,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { WildfireEvent } from "@/lib/wildfire/types";
 import { eventsToHeatmapGeoJSON, eventsToMarkerGeoJSON, selectedEventToPolygonGeoJSON } from "@/lib/wildfire/geojson";
 import { SEVERITY_COLOR } from "@/lib/wildfire/colors";
+import type { BasemapMode } from "@/components/ui/BasemapToggle";
 
 // Free, no-API-key vector basemaps from CARTO — dark-matter fits the cinematic
 // dark theme, positron is the light-mode counterpart. Attribution is baked
@@ -50,17 +51,23 @@ const FLY_DURATION_MS = 1800;
 
 interface FireMapProps {
   events: WildfireEvent[];
+  perimeterEvents: WildfireEvent[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   theme: "dark" | "light";
+  basemapMode: BasemapMode;
+  countryScope: string;
 }
 
-export default function FireMap({ events, selectedId, onSelect, theme }: FireMapProps) {
+export default function FireMap({ events, perimeterEvents, selectedId, onSelect, theme, basemapMode, countryScope }: FireMapProps) {
   const mapRef = useRef<MapRef>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const heatmapData = useMemo(() => eventsToHeatmapGeoJSON(events), [events]);
-  const polygonData = useMemo(() => selectedEventToPolygonGeoJSON(events, selectedId), [events, selectedId]);
+  const polygonData = useMemo(
+    () => selectedEventToPolygonGeoJSON(perimeterEvents, selectedId),
+    [perimeterEvents, selectedId],
+  );
   const markerData = useMemo(() => eventsToMarkerGeoJSON(events), [events]);
 
   const handleClick = useCallback(
@@ -97,16 +104,48 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
     if (!map) return;
 
     const selectedEvent = selectedId ? events.find((event) => event.id === selectedId) : null;
-    const target = selectedEvent
-      ? { center: [selectedEvent.location.lng, selectedEvent.location.lat] as [number, number], zoom: FIRE_DETAIL_ZOOM }
-      : { center: [WORLD_VIEW.longitude, WORLD_VIEW.latitude] as [number, number], zoom: WORLD_VIEW.zoom };
-
     try {
-      map.flyTo({ ...target, duration: FLY_DURATION_MS, essential: true });
+      if (selectedEvent) {
+        map.flyTo({
+          center: [selectedEvent.location.lng, selectedEvent.location.lat],
+          zoom: FIRE_DETAIL_ZOOM,
+          duration: FLY_DURATION_MS,
+          essential: true,
+        });
+      } else if (countryScope !== "global" && events.length > 0) {
+        if (events.length === 1) {
+          map.flyTo({
+            center: [events[0].location.lng, events[0].location.lat],
+            zoom: 7,
+            duration: FLY_DURATION_MS,
+            essential: true,
+          });
+        } else {
+          const lngs = events.map((event) => event.location.lng);
+          const lats = events.map((event) => event.location.lat);
+          const desktopPanel = window.innerWidth >= 768 ? 440 : 24;
+          map.fitBounds(
+            [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+            {
+              padding: { top: 88, right: desktopPanel, bottom: 88, left: 40 },
+              maxZoom: 7,
+              duration: FLY_DURATION_MS,
+              essential: true,
+            },
+          );
+        }
+      } else {
+        map.flyTo({
+          center: [WORLD_VIEW.longitude, WORLD_VIEW.latitude],
+          zoom: WORLD_VIEW.zoom,
+          duration: FLY_DURATION_MS,
+          essential: true,
+        });
+      }
     } catch {
       // Stale/torn-down map instance — nothing to recover, just skip.
     }
-  }, [selectedId, events]);
+  }, [selectedId, events, countryScope]);
 
   return (
     <Map
@@ -126,20 +165,24 @@ export default function FireMap({ events, selectedId, onSelect, theme }: FireMap
       attributionControl={{ compact: true }}
       onLoad={handleLoad}
     >
-      {theme === "dark" && (
+      {(
         // Mounted first so it lands below every fire layer that follows,
         // but above the base style's own layers (including the background).
-        <Source id={SATELLITE_SOURCE_ID} type="raster" tiles={[SATELLITE_TILE_URL]} tileSize={256}>
+        <Source
+          id={SATELLITE_SOURCE_ID}
+          type="raster"
+          tiles={[SATELLITE_TILE_URL]}
+          tileSize={256}
+          attribution="Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+        >
           <Layer
             id={SATELLITE_LAYER_ID}
             type="raster"
             paint={{
-              "raster-brightness-max": 0.35,
-              "raster-saturation": -0.7,
-              "raster-contrast": 0.2,
-              // Invisible at world scale, fades in like a tactical scanner
-              // once the cinematic flyTo brings a fire's terrain into view.
-              "raster-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0, 8, 0.6],
+              "raster-brightness-max": theme === "dark" ? 0.58 : 0.82,
+              "raster-saturation": theme === "dark" ? -0.35 : -0.08,
+              "raster-contrast": 0.16,
+              "raster-opacity": basemapMode === "satellite" ? 0.88 : 0,
             }}
           />
         </Source>
