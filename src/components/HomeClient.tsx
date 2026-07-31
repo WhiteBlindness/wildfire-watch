@@ -29,27 +29,8 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
   useEffect(() => {
     if (initialEvents.length > 0) return;
 
-    const controller = new AbortController();
     const frame = requestAnimationFrame(() => setEvents(generateMockEvents()));
-
-    async function loadEvents() {
-      try {
-        const response = await fetch("/api/fires", {
-          signal: controller.signal,
-          headers: { Accept: "application/json" },
-        });
-        if (!response.ok) throw new Error(`Fire feed failed: ${response.status}`);
-
-        const nextEvents = (await response.json()) as WildfireEvent[];
-        if (!controller.signal.aborted && nextEvents.length > 0) setEvents(nextEvents);
-      } catch (error) {
-        if (!controller.signal.aborted) console.warn("[wildfire] Using local fallback data.", error);
-      }
-    }
-
-    void loadEvents();
     return () => {
-      controller.abort();
       cancelAnimationFrame(frame);
     };
   }, [initialEvents]);
