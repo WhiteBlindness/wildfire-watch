@@ -1,6 +1,7 @@
 import "server-only";
 
 import { lookupPlace } from "./geo-lookup";
+import { createSimulatedTelemetry } from "./telemetry";
 import type { FireSeverity, WildfireDataAdapter, WildfireEvent } from "./types";
 
 // NASA FIRMS "area" API: real active-fire hotspot detections from the
@@ -110,6 +111,12 @@ function rowToEvent(row: FirmsRow, index: number): WildfireEvent {
     forces: null,
     internationalAid: null,
     evolution: null,
+    telemetry: createSimulatedTelemetry(
+      `firms-${row.acqDate}-${row.acqTime}-${row.latitude}-${row.longitude}`,
+      detectedAt,
+      row.frp,
+      severityFromFrp(row.frp),
+    ),
     maxFrpMw: row.frp,
     satelliteDetection: {
       frpMw: row.frp,

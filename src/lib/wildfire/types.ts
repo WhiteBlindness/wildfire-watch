@@ -60,6 +60,21 @@ export interface FireEvolutionPoint {
   personnel: number;
 }
 
+/** One simulated telemetry sample used by the selected-fire dashboard. */
+export interface FireTelemetryPoint {
+  timestamp: string;
+  areaBurned: number;
+  aerialUnits: number;
+  groundUnits: number;
+  frpTrend: number;
+}
+
+export interface FireTelemetry {
+  points: FireTelemetryPoint[];
+  /** Always true until an upstream source provides measured incident telemetry. */
+  simulated: true;
+}
+
 export interface WildfireEvent {
   id: string;
   name: string;
@@ -87,6 +102,7 @@ export interface WildfireEvent {
   forces: DeployedForces | null;
   internationalAid: InternationalAid | null;
   evolution: FireEvolutionPoint[] | null;
+  telemetry: FireTelemetry;
 
   /** Peak Fire Radiative Power (MW) across this cluster's detections — a real
    * physical measurement satellite sources provide. Null for sources (mock)

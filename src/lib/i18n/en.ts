@@ -43,6 +43,14 @@ const en = {
     aidActive: "International aid active",
     aidRequested: "International aid requested",
     evolutionTitle: "Burned area over time",
+    telemetryDashboardTitle: "Telemetry dashboard",
+    simulatedLabel: "Simulated",
+    fireProgressionTitle: "Fire progression",
+    resourceAllocationTitle: "Resource allocation",
+    affectedAreaLabel: "Affected area",
+    groundUnitsLabel: "Firefighters",
+    aerialUnitsLabel: "Aircraft",
+    simulatedTelemetryNote: "Area, resource allocation, and FRP history are simulated for visualization. FIRMS reports the selected thermal anomaly only.",
     satelliteTelemetryTitle: "Satellite telemetry",
     coordinatesLabel: "Coordinates",
     frpLabel: "Radiative power",
@@ -50,7 +58,7 @@ const en = {
     detectedAtLabel: "Detected at",
     referencePerimeterNote: "The map outline is a simulated reference perimeter around this thermal anomaly, not a measured burn boundary.",
     provenanceNote:
-      "Source: satellite detections ({source}). Ground forces, wind, and history are not observable from thermal detections, so they are not shown.",
+      "Source: satellite detections ({source}). Ground forces and wind are not observable from thermal detections; dashboard history is clearly marked as simulated.",
   },
   ad: {
     label: "Advertisement",

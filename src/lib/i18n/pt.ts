@@ -43,6 +43,14 @@ const pt: Dictionary = {
     aidActive: "Ajuda internacional ativa",
     aidRequested: "Ajuda internacional solicitada",
     evolutionTitle: "Evolução da área ardida",
+    telemetryDashboardTitle: "Painel de telemetria",
+    simulatedLabel: "Simulado",
+    fireProgressionTitle: "Progressão do incêndio",
+    resourceAllocationTitle: "Afetação de recursos",
+    affectedAreaLabel: "Área afetada",
+    groundUnitsLabel: "Bombeiros",
+    aerialUnitsLabel: "Meios aéreos",
+    simulatedTelemetryNote: "A área, os recursos e o histórico de energia radiativa são simulados para visualização. A FIRMS comunica apenas a anomalia térmica selecionada.",
     satelliteTelemetryTitle: "Telemetria de satélite",
     coordinatesLabel: "Coordenadas",
     frpLabel: "Potência radiativa",
@@ -50,7 +58,7 @@ const pt: Dictionary = {
     detectedAtLabel: "Detetado em",
     referencePerimeterNote: "O contorno no mapa é um perímetro de referência simulado em torno desta anomalia térmica, não um limite de área ardida medido.",
     provenanceNote:
-      "Fonte: deteções de satélite ({source}). Os meios no terreno, o vento e o histórico não são observáveis a partir de deteções térmicas, por isso não são apresentados.",
+      "Fonte: deteções de satélite ({source}). Os meios no terreno e o vento não são observáveis a partir de deteções térmicas; o histórico do painel está claramente identificado como simulado.",
   },
   ad: {
     label: "Publicidade",

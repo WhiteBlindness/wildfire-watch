@@ -1,6 +1,7 @@
 import "server-only";
 
 import { mulberry32, pick, seededInt, seededRange } from "./random";
+import { createSimulatedTelemetry } from "./telemetry";
 import type {
   DeployedForces,
   FireEvolutionPoint,
@@ -176,6 +177,7 @@ function toEvent(seed: FireSeed, index: number): WildfireEvent {
   );
 
   const needsAid = seed.severity === "extreme" && seed.status === "active";
+  const telemetry = createSimulatedTelemetry(seed.id, now.toISOString(), seed.maxRadiusKm * 8, seed.severity);
 
   return {
     id: seed.id,
@@ -206,6 +208,7 @@ function toEvent(seed: FireSeed, index: number): WildfireEvent {
       countries: needsAid ? shuffle(rand, AID_COUNTRIES).slice(0, seededInt(rand, 1, 3)) : [],
     },
     evolution,
+    telemetry,
     maxFrpMw: null,
     satelliteDetection: null,
     source: "mock",

@@ -4,7 +4,7 @@ import type { WildfireEvent } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
 import { interpolate } from "@/lib/i18n/dictionaries";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
-import FireEvolutionChart from "./FireEvolutionChart";
+import FireTelemetryDashboard from "./FireTelemetryDashboard";
 import AdSlot from "@/components/ui/AdSlot";
 
 interface FireDetailsPanelProps {
@@ -142,14 +142,7 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
         </div>
       )}
 
-      {event.evolution && event.evolution.length > 0 && (
-        <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/50">
-            {t.fireDetail.evolutionTitle}
-          </h3>
-          <FireEvolutionChart data={event.evolution} />
-        </div>
-      )}
+      <FireTelemetryDashboard telemetry={event.telemetry} />
 
       {event.source !== "mock" && (
         <p className="text-xs text-foreground/50">
