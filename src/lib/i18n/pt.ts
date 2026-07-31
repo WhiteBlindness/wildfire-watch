@@ -41,7 +41,6 @@ const pt: Dictionary = {
     notMeasured: "Não medida",
     estimatedAreaNote: "Estimativa por FRP × tempo decorrido",
     startLabel: "Início",
-    evolutionTitle: "Evolução da área ardida",
     liveConditionsTitle: "Condições em direto",
     liveLabel: "Direto",
     temperatureLabel: "Temperatura",

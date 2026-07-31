@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "WildfireWatch — Monitorização global de incêndios em tempo real",
   description:
-    "Mapa global de incêndios florestais em tempo real: focos de calor, perímetros ardidos, meios no terreno e evolução por incêndio.",
+    "Mapa global de anomalias térmicas NASA FIRMS com potência radiativa, perímetros derivados e condições meteorológicas em direto.",
 };
 
 export default function RootLayout({

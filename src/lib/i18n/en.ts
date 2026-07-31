@@ -41,7 +41,6 @@ const en = {
     notMeasured: "Not measured",
     estimatedAreaNote: "Estimated from FRP × elapsed time",
     startLabel: "Started",
-    evolutionTitle: "Burned area over time",
     liveConditionsTitle: "Live conditions",
     liveLabel: "Live",
     temperatureLabel: "Temperature",
