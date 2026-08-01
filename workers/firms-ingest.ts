@@ -4,6 +4,8 @@ const FIRMS_BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv";
 const FIRMS_SOURCE = "VIIRS_SNPP_NRT";
 const FIRMS_DAY_RANGE = 1;
 const MAX_POINTS = 6_000;
+const PRIORITY_POINTS = 1_500;
+const GRID_CELL_DEGREES = 2;
 
 export interface FirmsIngestEnv {
   FIRMS_CACHE: FirmsKvNamespace;
@@ -16,7 +18,7 @@ interface FirmsKvNamespace {
   put(key: string, value: string): Promise<void>;
 }
 
-interface ParsedRow {
+export interface ParsedRow {
   lat: number;
   lng: number;
   frpMw: number;
@@ -40,7 +42,7 @@ function toTimestamp(date: string, time: string): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function parseCsv(csv: string): { sourceRows: number; rows: ParsedRow[] } {
+export function parseCsv(csv: string): { sourceRows: number; rows: ParsedRow[] } {
   const lines = csv.trim().split(/\r?\n/);
   if (lines.length < 2) return { sourceRows: 0, rows: [] };
 
@@ -97,22 +99,57 @@ function toPoint(row: ParsedRow): CachedFirmsPoint {
   };
 }
 
-function selectPoints(rows: ParsedRow[]): CachedFirmsPoint[] {
+function comparePoints(a: CachedFirmsPoint, b: CachedFirmsPoint): number {
+  return b.frpMw - a.frpMw
+    || b.confidencePct - a.confidencePct
+    || b.detectedAt.localeCompare(a.detectedAt)
+    || a.id.localeCompare(b.id);
+}
+
+function gridCellKey(point: CachedFirmsPoint): string {
+  const latCell = Math.floor((point.lat + 90) / GRID_CELL_DEGREES);
+  const lngCell = Math.floor((point.lng + 180) / GRID_CELL_DEGREES);
+  return `${latCell}:${lngCell}`;
+}
+
+export function selectPoints(rows: ParsedRow[]): CachedFirmsPoint[] {
   const unique = new Map<string, CachedFirmsPoint>();
   for (const row of rows) {
     const point = toPoint(row);
-    unique.set(point.id, point);
+    const existing = unique.get(point.id);
+    if (!existing || comparePoints(point, existing) < 0) unique.set(point.id, point);
   }
-  const points = [...unique.values()];
-  if (points.length <= MAX_POINTS) return points;
+  const sorted = [...unique.values()].sort(comparePoints);
+  if (sorted.length <= MAX_POINTS) return sorted;
 
-  // Deterministic sampling keeps global coverage without combining nearby
-  // detections: every retained item is still one original FIRMS anomaly.
-  return points
-    .map((point) => ({ point, score: hash(point.id) }))
-    .sort((a, b) => a.score - b.score)
-    .slice(0, MAX_POINTS)
-    .map(({ point }) => point);
+  // Preserve the absolute largest threats first, independent of density.
+  // Then fill the remaining capacity in rounds across 2-degree cells so a
+  // dense region cannot crowd entire countries out of the global dataset.
+  const selected = sorted.slice(0, PRIORITY_POINTS);
+  const buckets = new Map<string, CachedFirmsPoint[]>();
+  for (const point of sorted.slice(PRIORITY_POINTS)) {
+    const key = gridCellKey(point);
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(point);
+    else buckets.set(key, [point]);
+  }
+
+  const orderedBuckets = [...buckets.entries()].sort(([keyA, pointsA], [keyB, pointsB]) => (
+    comparePoints(pointsA[0], pointsB[0]) || keyA.localeCompare(keyB)
+  ));
+  for (let round = 0; selected.length < MAX_POINTS; round += 1) {
+    let addedThisRound = 0;
+    for (const [, bucket] of orderedBuckets) {
+      const point = bucket[round];
+      if (!point) continue;
+      selected.push(point);
+      addedThisRound += 1;
+      if (selected.length === MAX_POINTS) break;
+    }
+    if (addedThisRound === 0) break;
+  }
+
+  return selected;
 }
 
 export async function refreshFirmsCache(env: FirmsIngestEnv): Promise<FirmsCachePayload> {
