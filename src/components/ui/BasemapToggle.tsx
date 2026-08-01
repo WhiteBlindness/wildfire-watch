@@ -30,8 +30,8 @@ export default function BasemapToggle({
       <span className="mission-basemap-label hidden pr-1 text-xs font-semibold">
         {satellite ? t.topBar.satelliteLabel : t.topBar.plainLabel}
       </span>
-      <span aria-hidden="true" className="relative flex h-5 w-9 shrink-0 items-center overflow-hidden rounded-full bg-black/45 p-[3px] ring-1 ring-inset ring-white/10">
-        <span className={`h-3.5 w-3.5 shrink-0 rounded-full bg-red-500 transition-transform duration-300 ease-out motion-reduce:transition-none ${satellite ? "translate-x-4" : "translate-x-0"}`} />
+      <span aria-hidden="true" className="flex items-center relative h-5 w-9 shrink-0 overflow-hidden rounded-full border border-white/10 bg-neutral-900/80 ring-1 ring-inset ring-white/10">
+        <span className={`absolute left-[4px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-transform duration-300 ease-in-out bg-red-600 motion-reduce:transition-none ${satellite ? "translate-x-[14px]" : "translate-x-0"}`} />
       </span>
     </button>
   );
