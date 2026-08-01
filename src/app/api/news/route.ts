@@ -1,26 +1,4 @@
-import { XMLParser } from "fast-xml-parser";
-
 export const dynamic = "force-dynamic";
-
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  trimValues: true,
-  parseTagValue: false,
-});
-
-interface RssItem {
-  title?: string;
-  link?: string;
-  pubDate?: string;
-}
-
-interface RssPayload {
-  rss?: {
-    channel?: {
-      item?: RssItem | RssItem[];
-    };
-  };
-}
 
 interface NewsArticle {
   title: string;
@@ -28,25 +6,35 @@ interface NewsArticle {
   publishedAt: string;
 }
 
-async function fetchArticles(endpoint: URL): Promise<NewsArticle[]> {
-  const response = await fetch(endpoint, {
-    headers: {
-      Accept: "application/rss+xml, application/xml;q=0.9",
-      "User-Agent": "WildfireWatch/1.0 (+https://wildfire-watch.duartemonteiro.workers.dev/)",
-    },
-    signal: AbortSignal.timeout(8_000),
+function decodeXml(value: string): string {
+  const unwrapped = value.trim().replace(/^<!\[CDATA\[|\]\]>$/g, "");
+  const namedEntities: Record<string, string> = {
+    amp: "&",
+    apos: "'",
+    gt: ">",
+    lt: "<",
+    quot: '"',
+  };
+
+  return unwrapped.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (entity, token: string) => {
+    if (token.startsWith("#x")) return String.fromCodePoint(Number.parseInt(token.slice(2), 16));
+    if (token.startsWith("#")) return String.fromCodePoint(Number.parseInt(token.slice(1), 10));
+    return namedEntities[token.toLowerCase()] ?? entity;
   });
-  if (!response.ok) throw new Error(`Google News request failed: ${response.status}`);
+}
 
-  const payload = parser.parse(await response.text()) as RssPayload;
-  const rawItems = payload.rss?.channel?.item;
-  const items = Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
+function readTag(itemXml: string, tag: string): string | null {
+  const match = itemXml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "i"));
+  return match ? decodeXml(match[1]) : null;
+}
 
-  return items
-    .map((item): NewsArticle | null => {
-      const title = typeof item.title === "string" ? item.title.trim() : null;
-      const link = typeof item.link === "string" ? item.link.trim() : null;
-      const publishedTime = typeof item.pubDate === "string" ? Date.parse(item.pubDate) : Number.NaN;
+function parseRssArticles(xml: string): NewsArticle[] {
+  return [...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)]
+    .map((match): NewsArticle | null => {
+      const itemXml = match[1];
+      const title = readTag(itemXml, "title");
+      const link = readTag(itemXml, "link");
+      const publishedTime = Date.parse(readTag(itemXml, "pubDate") ?? "");
       const publishedAt = Number.isFinite(publishedTime) ? new Date(publishedTime).toISOString() : null;
       if (!title || !link || !publishedAt || !link.startsWith("https://")) return null;
       return { title, link, publishedAt };
@@ -54,6 +42,24 @@ async function fetchArticles(endpoint: URL): Promise<NewsArticle[]> {
     .filter((article): article is NewsArticle => article !== null)
     .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
     .slice(0, 3);
+}
+async function fetchArticles(endpoint: URL): Promise<NewsArticle[]> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12_000);
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: {
+        Accept: "application/rss+xml, application/xml;q=0.9",
+        "User-Agent": "WildfireWatch/1.0 (+https://wildfire-watch.duartemonteiro.workers.dev/)",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Google News request failed: ${response.status}`);
+    return parseRssArticles(await response.text());
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
