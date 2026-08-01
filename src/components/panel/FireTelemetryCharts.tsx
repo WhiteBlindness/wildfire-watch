@@ -16,15 +16,15 @@ export default function FireTelemetryCharts({ points }: FireTelemetryChartsProps
   const gradientId = `fire-area-${useId().replace(/:/g, "")}`;
   const labels = locale === "pt"
     ? {
-        evolution: "Evolu??o do inc?ndio",
-        evolutionSubtitle: "?rea ardida e pot?ncia radiativa",
-        area: "?rea ardida (ha)",
-        frp: "Pot?ncia radiativa (MW)",
-        resources: "Aloca??o de recursos",
-        resourcesSubtitle: "Efetivos e meios a?reos mobilizados",
+        evolution: "Evolu\u00e7\u00e3o do inc\u00eandio",
+        evolutionSubtitle: "\u00c1rea ardida e pot\u00eancia radiativa",
+        area: "\u00c1rea ardida (ha)",
+        frp: "Pot\u00eancia radiativa (MW)",
+        resources: "Aloca\u00e7\u00e3o de recursos",
+        resourcesSubtitle: "Efetivos e meios a\u00e9reos mobilizados",
         ground: "Bombeiros",
         aerial: "Aeronaves",
-        simulated: "Proje??o simulada a partir da telemetria FIRMS",
+        simulated: "Proje\u00e7\u00e3o simulada a partir da telemetria FIRMS",
       }
     : {
         evolution: "Fire evolution",
