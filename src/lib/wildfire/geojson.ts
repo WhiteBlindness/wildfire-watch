@@ -139,8 +139,10 @@ export function eventsToMarkerGeoJSON(events: WildfireEvent[]): GeoJSON.FeatureC
       properties: {
         fireId: event.id,
         severity: event.severity,
-        status: event.status,
         name: event.name,
+        frpMw: event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 0,
+        confidencePct: event.satelliteDetection?.confidencePct ?? 0,
+        detectedAt: event.satelliteDetection?.detectedAt ?? event.lastUpdated,
       },
     })),
   };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { FireWeather, WildfireEvent } from "@/lib/wildfire/types";
+import type { FireSelection, FireWeather } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
 import { estimateBurnedAreaHectares } from "@/lib/wildfire/fire-estimation";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
@@ -9,28 +9,36 @@ import FireTelemetryDashboard from "./FireTelemetryDashboard";
 import AdSlot from "@/components/ui/AdSlot";
 
 interface FireDetailsPanelProps {
-  event: WildfireEvent;
+  selection: FireSelection;
   onClose: () => void;
+}
+
+interface LocationResult {
+  key: string;
+  label: string | null;
+  failed: boolean;
 }
 
 const DATE_LOCALE: Record<"en" | "pt", string> = { en: "en-GB", pt: "pt-PT" };
 
-export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelProps) {
+export default function FireDetailsPanel({ selection, onClose }: FireDetailsPanelProps) {
   const { locale, t } = useLocale();
   const [weather, setWeather] = useState<FireWeather | null>(null);
   const [weatherFailed, setWeatherFailed] = useState(false);
+  const [locationResult, setLocationResult] = useState<LocationResult | null>(null);
+  const locationKey = `${selection.id}:${locale}`;
+  const hasCurrentLocation = locationResult?.key === locationKey;
+  const locationName = hasCurrentLocation ? locationResult.label : null;
+  const locationFailed = hasCurrentLocation ? locationResult.failed : false;
   const estimatedAreaHectares = useMemo(
-    () => event.satelliteDetection
-      ? estimateBurnedAreaHectares(event.satelliteDetection.frpMw, event.startedAt)
-      : event.areaHectares,
-    [event],
+    () => estimateBurnedAreaHectares(selection.totalFrpMw, selection.startedAt),
+    [selection.startedAt, selection.totalFrpMw],
   );
-
   useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams({
-      latitude: String(event.location.lat),
-      longitude: String(event.location.lng),
+      latitude: String(selection.location.lat),
+      longitude: String(selection.location.lng),
       current: [
         "temperature_2m",
         "relative_humidity_2m",
@@ -80,8 +88,33 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
       });
 
     return () => controller.abort();
-  }, [event.location.lat, event.location.lng]);
+  }, [selection.location.lat, selection.location.lng]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      lat: String(selection.location.lat),
+      lon: String(selection.location.lng),
+      locale,
+    });
 
+    fetch(`/api/reverse-geocode?${params}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Reverse geocode failed: ${response.status}`);
+        return response.json() as Promise<{ label?: string }>;
+      })
+      .then((payload) => setLocationResult({
+        key: locationKey,
+        label: payload.label ?? null,
+        failed: !payload.label,
+      }))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        console.error("Unable to resolve fire location", error);
+        setLocationResult({ key: locationKey, label: null, failed: true });
+      });
+
+    return () => controller.abort();
+  }, [locale, locationKey, selection.location.lat, selection.location.lng]);
   function formatDateTime(iso: string): string {
     // DD/MM/YYYY regardless of language: en-GB and pt-PT both order day-first,
     // avoiding the en-US MM/DD ambiguity while still translating the chrome.
@@ -109,9 +142,11 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
 
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold leading-snug tracking-[-0.02em] text-foreground">{event.name}</h2>
+          <h2 className="text-lg font-semibold leading-snug tracking-[-0.02em] text-foreground">
+            {selection.kind === "cluster" ? t.fireDetail.majorEventTitle : selection.name}
+          </h2>
           <p className="mt-1 text-sm text-foreground/55">
-            {event.region === event.country ? event.country : `${event.region}, ${event.country}`}
+            {locationName ?? (locationFailed ? t.fireDetail.locationUnavailable : t.fireDetail.locationLoading)}
           </p>
         </div>
         <button
@@ -129,28 +164,31 @@ export default function FireDetailsPanel({ event, onClose }: FireDetailsPanelPro
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <Stat
           label={t.fireDetail.areaLabel}
-          value={`${event.satelliteDetection ? "≈ " : ""}${formatThousands(estimatedAreaHectares)} ha`}
-          hint={event.satelliteDetection ? t.fireDetail.estimatedAreaNote : undefined}
+          value={`≈ ${formatThousands(estimatedAreaHectares)} ha`}
+          hint={selection.kind === "cluster" ? t.fireDetail.clusterAreaNote : t.fireDetail.estimatedAreaNote}
         />
-        <Stat label={t.fireDetail.startLabel} value={formatDateTime(event.startedAt)} />
+        <Stat label={t.fireDetail.startLabel} value={formatDateTime(selection.startedAt)} />
       </dl>
 
-      {event.satelliteDetection && (
-        <div className="rounded-xl bg-red-500/8 p-3.5 ring-1 ring-inset ring-red-500/25">
+      <div className="rounded-xl bg-red-500/8 p-3.5 ring-1 ring-inset ring-red-500/25">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-300/80">
             {t.fireDetail.satelliteTelemetryTitle}
           </h3>
           <dl className="grid grid-cols-2 gap-3 text-sm">
-            <Stat label={t.fireDetail.coordinatesLabel} value={`${event.location.lat.toFixed(4)}, ${event.location.lng.toFixed(4)}`} />
-            <Stat label={t.fireDetail.frpLabel} value={`${event.satelliteDetection.frpMw.toFixed(1)} MW`} />
-            <Stat label={t.fireDetail.confidenceLabel} value={`${Math.round(event.satelliteDetection.confidencePct)}%`} />
-            <Stat label={t.fireDetail.detectedAtLabel} value={formatDateTime(event.satelliteDetection.detectedAt)} />
+            <Stat label={t.fireDetail.coordinatesLabel} value={`${selection.location.lat.toFixed(4)}, ${selection.location.lng.toFixed(4)}`} />
+            <Stat label={selection.kind === "cluster" ? t.fireDetail.combinedFrpLabel : t.fireDetail.frpLabel} value={`${selection.totalFrpMw.toFixed(1)} MW`} />
+            <Stat
+              label={selection.kind === "cluster" ? t.fireDetail.detectionCountLabel : t.fireDetail.confidenceLabel}
+              value={selection.kind === "cluster" ? formatThousands(selection.detectionCount) : `${Math.round(selection.confidencePct ?? 0)}%`}
+            />
+            <Stat label={t.fireDetail.detectedAtLabel} value={formatDateTime(selection.detectedAt)} />
           </dl>
-          <p className="mt-3 text-xs leading-5 text-foreground/60">{t.fireDetail.referencePerimeterNote}</p>
+          <p className="mt-3 text-xs leading-5 text-foreground/60">
+            {selection.kind === "cluster" ? t.fireDetail.clusterAreaNote : t.fireDetail.referencePerimeterNote}
+          </p>
         </div>
-      )}
 
-      <FireTelemetryDashboard weather={weather} weatherFailed={weatherFailed} />
+      <FireTelemetryDashboard weather={weather} weatherFailed={weatherFailed} locationName={locationName} selectionId={selection.id} />
 
       <div className="mt-auto pt-2">
         <AdSlot variant="panel-rectangle" />

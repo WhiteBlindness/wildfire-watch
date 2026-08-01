@@ -8,7 +8,8 @@ import Legend from "@/components/map/Legend";
 import SidePanel from "@/components/panel/SidePanel";
 import AdSlot from "@/components/ui/AdSlot";
 import { firmsAdapter } from "@/lib/wildfire/firms-adapter";
-import type { WildfireEvent } from "@/lib/wildfire/types";
+import { eventToSelection } from "@/lib/wildfire/selection";
+import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
 
 // MapLibre touches `window` on import, so the map must never render during SSR.
@@ -21,7 +22,7 @@ interface HomeClientProps {
 export default function HomeClient({ events: initialEvents = [] }: HomeClientProps) {
   const { resolvedTheme } = useTheme();
   const [events, setEvents] = useState<WildfireEvent[]>(initialEvents);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedFire, setSelectedFire] = useState<FireSelection | null>(null);
   const [isPanelMinimized, setIsPanelMinimized] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState("global");
   const [basemapMode, setBasemapMode] = useState<BasemapMode>("satellite");
@@ -54,17 +55,22 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
       : events.filter((event) => event.country === selectedCountry),
     [events, selectedCountry],
   );
-  const selectedEvent = filteredEvents.find((event) => event.id === selectedId) ?? null;
   const mapTheme = resolvedTheme === "light" ? "light" : "dark";
 
   function handleSelect(id: string | null): void {
-    setSelectedId(id);
-    if (id) setIsPanelMinimized(false);
+    const event = id ? filteredEvents.find((candidate) => candidate.id === id) : null;
+    setSelectedFire(event ? eventToSelection(event) : null);
+    if (event) setIsPanelMinimized(false);
+  }
+
+  function handleMapSelect(selection: FireSelection | null): void {
+    setSelectedFire(selection);
+    if (selection) setIsPanelMinimized(false);
   }
 
   function handleCountryChange(country: string): void {
     setSelectedCountry(country);
-    setSelectedId(null);
+    setSelectedFire(null);
     setIsPanelMinimized(false);
   }
 
@@ -84,8 +90,8 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
         <FireMap
           events={filteredEvents}
           perimeterEvents={events}
-          selectedId={selectedId}
-          onSelect={handleSelect}
+          selectedFire={selectedFire}
+          onSelect={handleMapSelect}
           theme={mapTheme}
           basemapMode={basemapMode}
           countryScope={selectedCountry}
@@ -106,7 +112,7 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
 
       <SidePanel
         events={filteredEvents}
-        selectedEvent={selectedEvent}
+        selectedFire={selectedFire}
         isMinimized={isPanelMinimized}
         onSelect={(id) => handleSelect(id)}
         onClose={() => handleSelect(null)}

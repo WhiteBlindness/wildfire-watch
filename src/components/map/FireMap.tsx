@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Map, { Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
-import type { MapLibreEvent } from "maplibre-gl";
+import type { GeoJSONSource, Map as MapLibreMap, MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { WildfireEvent } from "@/lib/wildfire/types";
-import { eventsToHeatmapGeoJSON, eventsToMarkerGeoJSON, selectedEventToPolygonGeoJSON } from "@/lib/wildfire/geojson";
+import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
+import { eventsToClusterSelection, eventToSelection } from "@/lib/wildfire/selection";
+import { eventsToMarkerGeoJSON, selectedEventToPolygonGeoJSON } from "@/lib/wildfire/geojson";
 import { SEVERITY_COLOR } from "@/lib/wildfire/colors";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
 
@@ -33,11 +34,15 @@ const SATELLITE_LAYER_ID = "satellite-layer";
 const MARKER_LAYER_ID = "fire-markers";
 const MARKER_HIT_AREA_LAYER_ID = "fire-marker-hit-area";
 const POLYGON_FILL_LAYER_ID = "fire-polygons-fill";
-const HEATMAP_LAYER_ID = "fire-heatmap";
+const CLUSTER_LAYER_ID = "major-fire-events";
+const CLUSTER_GLOW_LAYER_ID = "major-fire-events-glow";
+const CLUSTER_HIT_AREA_LAYER_ID = "major-fire-events-hit-area";
+const CLUSTER_COUNT_LAYER_ID = "major-fire-events-count";
+const MARKER_SOURCE_ID = "fire-markers-src";
 // Every layer whose features carry a `fireId` property — clicking or
 // hovering any of them (marker, burned-area fill, or heatmap core) selects
 // the fire, not just the small marker dot.
-const INTERACTIVE_LAYER_IDS = [MARKER_HIT_AREA_LAYER_ID, MARKER_LAYER_ID, POLYGON_FILL_LAYER_ID, HEATMAP_LAYER_ID];
+const INTERACTIVE_LAYER_IDS = [CLUSTER_HIT_AREA_LAYER_ID, CLUSTER_LAYER_ID, MARKER_HIT_AREA_LAYER_ID, MARKER_LAYER_ID, POLYGON_FILL_LAYER_ID];
 
 // Centered on Iberia/the Atlantic rather than the equator — frames Europe,
 // North Africa, and the Atlantic on desktop instead of cutting Europe off
@@ -49,52 +54,149 @@ const FIRE_DETAIL_ZOOM = 12;
 // (which fire is now in view), not just decoration.
 const FLY_DURATION_MS = 1800;
 
+function findHybridAnchor(map: MapLibreMap): string | undefined {
+  const layers = map.getStyle().layers ?? [];
+  return layers.find((layer) => layer.type === "symbol" || (layer.type === "line" && /boundary|admin/i.test(layer.id)))?.id;
+}
+
+function syncSatelliteLayer(map: MapLibreMap, mode: BasemapMode, theme: "dark" | "light"): void {
+  if (!map.isStyleLoaded()) return;
+
+  if (mode === "plain") {
+    if (map.getLayer(SATELLITE_LAYER_ID)) map.removeLayer(SATELLITE_LAYER_ID);
+    if (map.getSource(SATELLITE_SOURCE_ID)) map.removeSource(SATELLITE_SOURCE_ID);
+    return;
+  }
+
+  if (!map.getSource(SATELLITE_SOURCE_ID)) {
+    map.addSource(SATELLITE_SOURCE_ID, {
+      type: "raster",
+      tiles: [SATELLITE_TILE_URL],
+      tileSize: 256,
+      attribution: "Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    });
+  }
+
+  if (!map.getLayer(SATELLITE_LAYER_ID)) {
+    map.addLayer({
+      id: SATELLITE_LAYER_ID,
+      type: "raster",
+      source: SATELLITE_SOURCE_ID,
+      paint: {
+        "raster-brightness-max": theme === "dark" ? 0.58 : 0.82,
+        "raster-saturation": theme === "dark" ? -0.35 : -0.08,
+        "raster-contrast": 0.16,
+        "raster-opacity": 0.88,
+      },
+    }, findHybridAnchor(map));
+  } else {
+    const anchor = findHybridAnchor(map);
+    const layers = map.getStyle().layers ?? [];
+    const currentIndex = layers.findIndex((layer) => layer.id === SATELLITE_LAYER_ID);
+    const anchorIndex = anchor ? layers.findIndex((layer) => layer.id === anchor) : -1;
+    if (anchor && currentIndex !== anchorIndex - 1) {
+      map.moveLayer(SATELLITE_LAYER_ID, anchor);
+    }
+  }
+}
+
 interface FireMapProps {
   events: WildfireEvent[];
   perimeterEvents: WildfireEvent[];
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  selectedFire: FireSelection | null;
+  onSelect: (selection: FireSelection | null) => void;
   theme: "dark" | "light";
   basemapMode: BasemapMode;
   countryScope: string;
 }
 
-export default function FireMap({ events, perimeterEvents, selectedId, onSelect, theme, basemapMode, countryScope }: FireMapProps) {
+export default function FireMap({ events, perimeterEvents, selectedFire, onSelect, theme, basemapMode, countryScope }: FireMapProps) {
   const mapRef = useRef<MapRef>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [isHoveringInteractiveFeature, setIsHoveringInteractiveFeature] = useState(false);
 
-  const heatmapData = useMemo(() => eventsToHeatmapGeoJSON(events), [events]);
+  const selectionRequestRef = useRef(0);
   const polygonData = useMemo(
-    () => selectedEventToPolygonGeoJSON(perimeterEvents, selectedId),
-    [perimeterEvents, selectedId],
+    () => selectedEventToPolygonGeoJSON(perimeterEvents, selectedFire?.kind === "point" ? selectedFire.id : null),
+    [perimeterEvents, selectedFire],
   );
   const markerData = useMemo(() => eventsToMarkerGeoJSON(events), [events]);
 
+  const eventById = useMemo(() => new globalThis.Map(events.map((event) => [event.id, event])), [events]);
+
   const handleClick = useCallback(
-    (e: MapLayerMouseEvent) => {
+    async (e: MapLayerMouseEvent) => {
       const feature = e.features?.[0];
-      const fireId = (feature?.properties?.fireId as string | undefined) ?? null;
-      onSelect(fireId);
+      const requestId = ++selectionRequestRef.current;
+      if (!feature) {
+        onSelect(null);
+        return;
+      }
+
+      if (feature.properties?.cluster && feature.geometry.type === "Point") {
+        const clusterId = Number(feature.properties.cluster_id);
+        const pointCount = Number(feature.properties.point_count);
+        const source = mapRef.current?.getMap().getSource(MARKER_SOURCE_ID) as GeoJSONSource | undefined;
+        if (!source || !Number.isFinite(clusterId) || !Number.isFinite(pointCount)) return;
+
+        try {
+          const [leaves, expansionZoom] = await Promise.all([
+            source.getClusterLeaves(clusterId, pointCount, 0),
+            source.getClusterExpansionZoom(clusterId),
+          ]);
+          if (selectionRequestRef.current !== requestId) return;
+          const members = leaves
+            .map((leaf) => eventById.get(String(leaf.properties?.fireId)))
+            .filter((event): event is WildfireEvent => Boolean(event));
+          const [lng, lat] = feature.geometry.coordinates;
+          const selection = eventsToClusterSelection(members, clusterId, { lng, lat });
+          if (selection) onSelect(selection);
+
+          mapRef.current?.getMap().flyTo({
+            center: [lng, lat],
+            zoom: Math.min(expansionZoom, 9),
+            duration: FLY_DURATION_MS,
+            essential: true,
+          });
+        } catch (error) {
+          console.error("Unable to inspect fire cluster", error);
+        }
+        return;
+      }
+
+      const fireId = String(feature.properties?.fireId ?? "");
+      const event = eventById.get(fireId);
+      onSelect(event ? eventToSelection(event) : null);
     },
-    [onSelect],
+    [eventById, onSelect],
   );
 
   const handleMove = useCallback((e: MapLayerMouseEvent) => {
-    const feature = e.features?.[0];
-    setHoveredId((feature?.properties?.fireId as string | undefined) ?? null);
+    setIsHoveringInteractiveFeature(Boolean(e.features?.[0]));
   }, []);
 
+  const applyStyleEnhancements = useCallback((map: MapLibreMap) => {
+    if (theme === "dark" && map.getLayer("background")) {
+      map.setPaintProperty("background", "background-color", DARK_BACKGROUND);
+    }
+    syncSatelliteLayer(map, basemapMode, theme);
+  }, [basemapMode, theme]);
+
   const handleLoad = useCallback(
-    (e: MapLibreEvent) => {
-      const map = e.target;
-      if (theme !== "dark") return;
-      // dark-matter's background layer is always id "background" per its style spec.
-      if (map.getLayer("background")) {
-        map.setPaintProperty("background", "background-color", DARK_BACKGROUND);
-      }
-    },
-    [theme],
+    (e: MapLibreEvent) => applyStyleEnhancements(e.target),
+    [applyStyleEnhancements],
   );
+
+  const handleStyleData = useCallback(
+    (e: MapLibreEvent) => {
+      if (e.target.isStyleLoaded()) applyStyleEnhancements(e.target);
+    },
+    [applyStyleEnhancements],
+  );
+
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (map?.isStyleLoaded()) applyStyleEnhancements(map);
+  }, [applyStyleEnhancements]);
 
   // Cinematic camera: fly to the selected fire (from a map click or a panel
   // click, either way — this only cares about the resulting selectedId), or
@@ -103,11 +205,11 @@ export default function FireMap({ events, perimeterEvents, selectedId, onSelect,
     const map = mapRef.current?.getMap();
     if (!map) return;
 
-    const selectedEvent = selectedId ? events.find((event) => event.id === selectedId) : null;
+    if (selectedFire?.kind === "cluster") return;
     try {
-      if (selectedEvent) {
+      if (selectedFire?.kind === "point") {
         map.flyTo({
-          center: [selectedEvent.location.lng, selectedEvent.location.lat],
+          center: [selectedFire.location.lng, selectedFire.location.lat],
           zoom: FIRE_DETAIL_ZOOM,
           duration: FLY_DURATION_MS,
           essential: true,
@@ -145,7 +247,7 @@ export default function FireMap({ events, perimeterEvents, selectedId, onSelect,
     } catch {
       // Stale/torn-down map instance — nothing to recover, just skip.
     }
-  }, [selectedId, events, countryScope]);
+  }, [selectedFire, events, countryScope]);
 
   return (
     <Map
@@ -160,77 +262,15 @@ export default function FireMap({ events, perimeterEvents, selectedId, onSelect,
       interactiveLayerIds={INTERACTIVE_LAYER_IDS}
       onClick={handleClick}
       onMouseMove={handleMove}
-      onMouseLeave={() => setHoveredId(null)}
-      cursor={hoveredId ? "pointer" : "grab"}
+      onMouseLeave={() => setIsHoveringInteractiveFeature(false)}
+      cursor={isHoveringInteractiveFeature ? "pointer" : "grab"}
       attributionControl={{ compact: true }}
       onLoad={handleLoad}
+      onStyleData={handleStyleData}
     >
-      {(
-        // Mounted first so it lands below every fire layer that follows,
-        // but above the base style's own layers (including the background).
-        <Source
-          id={SATELLITE_SOURCE_ID}
-          type="raster"
-          tiles={[SATELLITE_TILE_URL]}
-          tileSize={256}
-          attribution="Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-        >
-          <Layer
-            id={SATELLITE_LAYER_ID}
-            type="raster"
-            paint={{
-              "raster-brightness-max": theme === "dark" ? 0.58 : 0.82,
-              "raster-saturation": theme === "dark" ? -0.35 : -0.08,
-              "raster-contrast": 0.16,
-              "raster-opacity": basemapMode === "satellite" ? 0.88 : 0,
-            }}
-          />
-        </Source>
-      )}
+      {/* Satellite raster is managed imperatively beneath vector overlays. */}
 
-      <Source id="fire-heatmap-src" type="geojson" data={heatmapData}>
-        {/* Wide, soft underlay reads as a glow radiating from each hotspot cluster. */}
-        <Layer
-          id="fire-heatmap-glow"
-          type="heatmap"
-          paint={{
-            "heatmap-weight": ["get", "intensity"],
-            "heatmap-intensity": 0.9,
-            "heatmap-radius": 55,
-            "heatmap-opacity": 0.45,
-            "heatmap-color": [
-              "interpolate",
-              ["linear"],
-              ["heatmap-density"],
-              0, "rgba(0,0,0,0)",
-              0.3, "rgba(249,115,22,0.35)",
-              0.6, "rgba(239,68,68,0.5)",
-              1, "rgba(185,28,28,0.65)",
-            ],
-          }}
-        />
-        <Layer
-          id={HEATMAP_LAYER_ID}
-          type="heatmap"
-          paint={{
-            "heatmap-weight": ["get", "intensity"],
-            "heatmap-intensity": 1.3,
-            "heatmap-radius": 20,
-            "heatmap-opacity": 0.9,
-            "heatmap-color": [
-              "interpolate",
-              ["linear"],
-              ["heatmap-density"],
-              0, "rgba(0,0,0,0)",
-              0.2, "#fde047",
-              0.4, "#f59e0b",
-              0.6, "#ef4444",
-              0.8, "#b91c1c",
-              1, "#fef08a",
-            ],
-          }}
-        />
-      </Source>
+      {/* Native clusters replace the former 6,000-point macro heatmap. */}
 
       <Source id="fire-polygons-src" type="geojson" data={polygonData}>
         <Layer
@@ -283,20 +323,105 @@ export default function FireMap({ events, perimeterEvents, selectedId, onSelect,
         />
       </Source>
 
-      <Source id="fire-markers-src" type="geojson" data={markerData}>
-        {/* Invisible 44px hit target keeps dense points easy to select on touch. */}
+      <Source
+        id={MARKER_SOURCE_ID}
+        type="geojson"
+        data={markerData}
+        cluster
+        clusterRadius={50}
+        clusterMaxZoom={10}
+        clusterProperties={{ sumFrpMw: ["+", ["get", "frpMw"]] }}
+      >
+        <Layer
+          id={CLUSTER_GLOW_LAYER_ID}
+          type="circle"
+          filter={["has", "point_count"]}
+          paint={{
+            "circle-radius": [
+              "interpolate", ["linear"], ["get", "point_count"],
+              2, 24,
+              10, 30,
+              50, 38,
+              250, 47,
+              1000, 55,
+            ],
+            "circle-color": "#ef4444",
+            "circle-opacity": 0.22,
+            "circle-blur": 0.55,
+          }}
+        />
+        <Layer
+          id={CLUSTER_HIT_AREA_LAYER_ID}
+          type="circle"
+          filter={["has", "point_count"]}
+          paint={{
+            "circle-radius": [
+              "interpolate", ["linear"], ["get", "point_count"],
+              2, 24,
+              50, 34,
+              250, 42,
+              1000, 50,
+            ],
+            "circle-opacity": 0,
+            "circle-stroke-opacity": 0,
+          }}
+        />
+        <Layer
+          id={CLUSTER_LAYER_ID}
+          type="circle"
+          filter={["has", "point_count"]}
+          paint={{
+            "circle-radius": [
+              "interpolate", ["linear"], ["get", "point_count"],
+              2, 18,
+              10, 23,
+              50, 30,
+              250, 38,
+              1000, 46,
+            ],
+            "circle-color": [
+              "interpolate", ["linear"], ["get", "sumFrpMw"],
+              0, "#f5c451",
+              250, "#f59e0b",
+              1000, "#ef4444",
+              5000, "#b91c1c",
+            ],
+            "circle-opacity": 0.92,
+            "circle-stroke-color": "rgba(255,255,255,0.9)",
+            "circle-stroke-width": 2,
+          }}
+        />
+        <Layer
+          id={CLUSTER_COUNT_LAYER_ID}
+          type="symbol"
+          filter={["has", "point_count"]}
+          layout={{
+            "text-field": ["get", "point_count_abbreviated"],
+            "text-size": 12,
+            "text-allow-overlap": true,
+            "text-ignore-placement": true,
+          }}
+          paint={{
+            "text-color": "#ffffff",
+            "text-halo-color": "rgba(15,23,42,0.75)",
+            "text-halo-width": 1,
+          }}
+        />
+
         <Layer
           id={MARKER_HIT_AREA_LAYER_ID}
           type="circle"
+          filter={["!", ["has", "point_count"]]}
           paint={{ "circle-radius": 22, "circle-opacity": 0, "circle-stroke-opacity": 0 }}
         />
         <Layer
           id={MARKER_LAYER_ID}
           type="circle"
+          filter={["!", ["has", "point_count"]]}
           paint={{
             "circle-radius": [
               "case",
-              ["==", ["get", "fireId"], selectedId ?? ""], 11,
+              ["==", ["get", "fireId"], selectedFire?.kind === "point" ? selectedFire.id : ""], 11,
               7,
             ],
             "circle-color": [
@@ -309,7 +434,7 @@ export default function FireMap({ events, perimeterEvents, selectedId, onSelect,
             ],
             "circle-stroke-width": [
               "case",
-              ["==", ["get", "fireId"], selectedId ?? ""], 3,
+              ["==", ["get", "fireId"], selectedFire?.kind === "point" ? selectedFire.id : ""], 3,
               1.5,
             ],
             "circle-stroke-color": "#ffffff",

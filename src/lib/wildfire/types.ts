@@ -129,6 +129,22 @@ export interface FireWeather {
   observedAt: string;
 }
 
+/** A user-selected FIRMS point or a native MapLibre macro-cluster. */
+export interface FireSelection {
+  kind: "point" | "cluster";
+  id: string;
+  name: string;
+  location: GeoPoint;
+  country: string;
+  region: string;
+  eventIds: string[];
+  detectionCount: number;
+  totalFrpMw: number;
+  confidencePct: number | null;
+  startedAt: string;
+  detectedAt: string;
+}
+
 /** Contract every real/mock data provider must implement. UI code only ever
  * talks to this interface, never to a concrete provider. */
 export interface WildfireDataAdapter {

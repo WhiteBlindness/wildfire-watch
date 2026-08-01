@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import type { WildfireEvent } from "@/lib/wildfire/types";
+import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireDetailsPanel from "./FireDetailsPanel";
 import GlobalOverview from "./GlobalOverview";
 
 interface SidePanelProps {
   events: WildfireEvent[];
-  selectedEvent: WildfireEvent | null;
+  selectedFire: FireSelection | null;
   isMinimized: boolean;
   onSelect: (id: string) => void;
   onClose: () => void;
@@ -21,7 +21,7 @@ interface SidePanelProps {
 
 export default function SidePanel({
   events,
-  selectedEvent,
+  selectedFire,
   isMinimized,
   onSelect,
   onClose,
@@ -42,7 +42,7 @@ export default function SidePanel({
   // Always docked — "Mission Control" reads as a permanent instrument, not a
   // modal that appears/disappears. Only the content and the mobile sheet's
   // height change between the global dashboard and a single fire's detail.
-  const detailOpen = selectedEvent !== null;
+  const detailOpen = selectedFire !== null;
 
   return (
     <aside
@@ -69,9 +69,9 @@ export default function SidePanel({
       </div>
 
       <div id="mission-control-panel-content" className="min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-smooth">
-        <div key={selectedEvent?.id ?? "overview"} className="min-h-full motion-safe:animate-[panel-content-enter_280ms_ease-out_both]">
-          {isDesktop || !isMinimized ? selectedEvent ? (
-            <FireDetailsPanel event={selectedEvent} onClose={onClose} />
+        <div key={selectedFire?.id ?? "overview"} className="min-h-full motion-safe:animate-[panel-content-enter_280ms_ease-out_both]">
+          {isDesktop || !isMinimized ? selectedFire ? (
+            <FireDetailsPanel selection={selectedFire} onClose={onClose} />
           ) : (
             <GlobalOverview
               events={events}
