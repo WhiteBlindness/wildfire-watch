@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FireSelection, FireWeather } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
 import { estimateBurnedAreaHectares } from "@/lib/wildfire/fire-estimation";
+import { createSimulatedTelemetry } from "@/lib/wildfire/telemetry";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireTelemetryDashboard from "./FireTelemetryDashboard";
 import AdSlot from "@/components/ui/AdSlot";
@@ -29,11 +30,37 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
   const locationKey = `${selection.id}:${locale}`;
   const hasCurrentLocation = locationResult?.key === locationKey;
   const locationName = hasCurrentLocation ? locationResult.label : null;
-  const locationFailed = hasCurrentLocation ? locationResult.failed : false;
   const estimatedAreaHectares = useMemo(
     () => estimateBurnedAreaHectares(selection.totalFrpMw, selection.startedAt),
     [selection.startedAt, selection.totalFrpMw],
   );
+  const fallbackLocationName = useMemo(() => {
+    const parts = [selection.region, selection.country].filter(
+      (part, index, values) => Boolean(part) && values.indexOf(part) === index,
+    );
+    return parts.join(", ") || `${selection.location.lat.toFixed(2)}, ${selection.location.lng.toFixed(2)}`;
+  }, [selection.country, selection.location.lat, selection.location.lng, selection.region]);
+
+  const telemetry = useMemo(() => {
+    const severity = selection.totalFrpMw >= 150
+      ? "extreme"
+      : selection.totalFrpMw >= 50
+        ? "high"
+        : selection.totalFrpMw >= 10
+          ? "moderate"
+          : "low";
+    const simulated = createSimulatedTelemetry(
+      selection.id,
+      selection.detectedAt,
+      selection.totalFrpMw,
+      severity,
+    );
+    const simulatedPeakArea = Math.max(...simulated.points.map((point) => point.areaBurned), 1);
+    return simulated.points.map((point) => ({
+      ...point,
+      areaBurned: Math.max(1, Math.round((point.areaBurned / simulatedPeakArea) * estimatedAreaHectares)),
+    }));
+  }, [estimatedAreaHectares, selection.detectedAt, selection.id, selection.totalFrpMw]);
   useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams({
@@ -109,7 +136,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
       }))
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        console.error("Unable to resolve fire location", error);
+        console.warn("Unable to resolve precise fire location; using regional fallback", error);
         setLocationResult({ key: locationKey, label: null, failed: true });
       });
 
@@ -146,7 +173,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
             {selection.kind === "cluster" ? t.fireDetail.majorEventTitle : selection.name}
           </h2>
           <p className="mt-1 text-sm text-foreground/55">
-            {locationName ?? (locationFailed ? t.fireDetail.locationUnavailable : t.fireDetail.locationLoading)}
+            {locationName ?? fallbackLocationName}
           </p>
         </div>
         <button
@@ -188,7 +215,13 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
           </p>
         </div>
 
-      <FireTelemetryDashboard weather={weather} weatherFailed={weatherFailed} locationName={locationName} selectionId={selection.id} />
+      <FireTelemetryDashboard
+        weather={weather}
+        weatherFailed={weatherFailed}
+        locationName={locationName ?? fallbackLocationName}
+        selectionId={selection.id}
+        telemetry={telemetry}
+      />
 
       <div className="mt-auto pt-2">
         <AdSlot variant="panel-rectangle" />

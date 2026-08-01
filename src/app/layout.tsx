@@ -32,6 +32,12 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="h-dvh overflow-hidden">
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "globalThis.__name ||= ((target, value) => Object.defineProperty(target, 'name', { value, configurable: true }));",
+          }}
+        />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           <LocaleProvider>{children}</LocaleProvider>
         </ThemeProvider>

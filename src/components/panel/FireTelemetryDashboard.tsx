@@ -3,13 +3,15 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { CloudRain, Compass, Droplets, ExternalLink, Gauge, Newspaper, RotateCw, Thermometer, Wind } from "lucide-react";
-import type { FireWeather } from "@/lib/wildfire/types";
+import type { FireTelemetryPoint, FireWeather } from "@/lib/wildfire/types";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
+import FireTelemetryCharts from "./FireTelemetryCharts";
 
 interface FireTelemetryDashboardProps {
   weather: FireWeather | null;
   locationName: string | null;
   selectionId: string;
+  telemetry: FireTelemetryPoint[];
   weatherFailed: boolean;
 }
 
@@ -25,7 +27,7 @@ interface NewsResult {
   failed: boolean;
 }
 
-export default function FireTelemetryDashboard({ weather, weatherFailed, locationName, selectionId }: FireTelemetryDashboardProps) {
+export default function FireTelemetryDashboard({ weather, weatherFailed, locationName, selectionId, telemetry }: FireTelemetryDashboardProps) {
   const { locale, t } = useLocale();
   const [newsResult, setNewsResult] = useState<NewsResult | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -39,7 +41,7 @@ export default function FireTelemetryDashboard({ weather, weatherFailed, locatio
     if (!locationName) return;
 
     const controller = new AbortController();
-    const params = new URLSearchParams({ location: locationName, locale, version: "2" });
+    const params = new URLSearchParams({ location: locationName, locale, version: "6" });
 
     fetch(`/api/news?${params}`, { signal: controller.signal })
       .then(async (response) => {
@@ -62,6 +64,8 @@ export default function FireTelemetryDashboard({ weather, weatherFailed, locatio
 
   return (
     <div className="space-y-4">
+      <FireTelemetryCharts points={telemetry} />
+
       <section className="rounded-2xl border border-border/60 bg-surface-muted/35 p-3.5 shadow-[0_18px_48px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold tracking-[-0.015em] text-foreground">
