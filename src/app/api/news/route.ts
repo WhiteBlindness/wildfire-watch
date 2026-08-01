@@ -36,27 +36,53 @@ function parseRssArticles(xml: string): NewsArticle[] {
       const link = readTag(itemXml, "link");
       const publishedTime = Date.parse(readTag(itemXml, "pubDate") ?? "");
       const publishedAt = Number.isFinite(publishedTime) ? new Date(publishedTime).toISOString() : null;
-      if (!title || !link || !publishedAt || !link.startsWith("https://")) return null;
-      return { title, link, publishedAt };
+      if (!title || !link || !publishedAt) return null;
+
+      try {
+        const articleUrl = new URL(link);
+        if (articleUrl.protocol !== "http:" && articleUrl.protocol !== "https:") return null;
+        articleUrl.protocol = "https:";
+        return { title, link: articleUrl.toString(), publishedAt };
+      } catch {
+        return null;
+      }
     })
     .filter((article): article is NewsArticle => article !== null)
     .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
     .slice(0, 3);
 }
-async function fetchArticles(endpoint: URL): Promise<NewsArticle[]> {
+async function fetchArticles(endpoint: URL, timeoutMs = 4_000): Promise<NewsArticle[]> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12_000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(endpoint, {
       headers: {
         Accept: "application/rss+xml, application/xml;q=0.9",
-        "User-Agent": "WildfireWatch/1.0 (+https://wildfire-watch.duartemonteiro.workers.dev/)",
+        "User-Agent": "Mozilla/5.0 (compatible; WildfireWatch/1.0)",
       },
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`Google News request failed: ${response.status}`);
+    if (!response.ok) throw new Error(`News RSS request failed: ${response.status}`);
     return parseRssArticles(await response.text());
+  } catch (error) {
+    if (endpoint.hostname !== "news.google.com") throw error;
+
+    const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    console.warn(`Google News RSS unavailable; using direct RSS fallback (${reason})`);
+    const fallbackEndpoint = new URL("https://www.bing.com/news/search");
+    const fallbackQueryStart = endpoint.searchParams.get("q") ?? "wildfire";
+    const fallbackQuery = fallbackQueryStart
+      .replace(/[()'"]/g, " ")
+      .replace(/\bOR\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    fallbackEndpoint.search = new URLSearchParams({
+      q: fallbackQuery,
+      format: "rss",
+      mkt: endpoint.searchParams.get("gl") === "PT" ? "pt-PT" : "en-GB",
+    }).toString();
+    return fetchArticles(fallbackEndpoint, 6_000);
   } finally {
     clearTimeout(timeoutId);
   }
@@ -100,7 +126,8 @@ export async function GET(request: Request): Promise<Response> {
       { headers: { "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=3600" } },
     );
   } catch (error) {
-    console.error("Local wildfire news lookup failed", error);
+    const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    console.error(`Local wildfire news lookup failed (${reason})`);
     return Response.json({ error: "News unavailable" }, { status: 502 });
   }
 }
