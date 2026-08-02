@@ -8,6 +8,7 @@ import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireTelemetryCharts from "./FireTelemetryCharts";
 
 interface FireTelemetryDashboardProps {
+  coordinates: { lat: number; lng: number };
   weather: FireWeather | null;
   locationName: string | null;
   selectionId: string;
@@ -27,15 +28,42 @@ interface NewsResult {
   failed: boolean;
 }
 
-export default function FireTelemetryDashboard({ weather, weatherFailed, locationName, selectionId, telemetry }: FireTelemetryDashboardProps) {
+type AirQualityCategory = "good" | "moderate" | "unhealthy-sensitive" | "unhealthy" | "very-unhealthy" | "hazardous";
+
+interface AirQualityReading {
+  pm25: number;
+  aqi: number;
+  category: AirQualityCategory;
+  observedAt: string;
+  stationName: string | null;
+  distanceKm: number | null;
+  unit: string;
+  source: "OpenAQ";
+  aqiMethod: string;
+}
+
+interface AirQualityResult {
+  key: string;
+  reading: AirQualityReading | null;
+  failed: boolean;
+}
+
+export default function FireTelemetryDashboard({ coordinates, weather, weatherFailed, locationName, selectionId, telemetry }: FireTelemetryDashboardProps) {
   const { locale, t } = useLocale();
   const [newsResult, setNewsResult] = useState<NewsResult | null>(null);
+  const [airQualityResult, setAirQualityResult] = useState<AirQualityResult | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
+  const [airQualityRetryNonce, setAirQualityRetryNonce] = useState(0);
   const requestKey = `${selectionId}:${locale}:${locationName ?? "pending"}:${retryNonce}`;
+  const airQualityKey = `${selectionId}:${coordinates.lat.toFixed(4)}:${coordinates.lng.toFixed(4)}:${airQualityRetryNonce}`;
   const hasCurrentResult = newsResult?.key === requestKey;
+  const hasCurrentAirQuality = airQualityResult?.key === airQualityKey;
   const articles = hasCurrentResult ? newsResult.articles : [];
   const newsFailed = hasCurrentResult ? newsResult.failed : false;
   const newsLoading = Boolean(locationName && !hasCurrentResult);
+  const airQualityReading = hasCurrentAirQuality ? airQualityResult.reading : null;
+  const airQualityFailed = hasCurrentAirQuality ? airQualityResult.failed : false;
+  const airQualityLoading = !hasCurrentAirQuality;
 
   useEffect(() => {
     if (!locationName) return;
@@ -62,9 +90,61 @@ export default function FireTelemetryDashboard({ weather, weatherFailed, locatio
     return () => controller.abort();
   }, [locale, locationName, requestKey]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({ lat: String(coordinates.lat), lon: String(coordinates.lng) });
+
+    fetch(`/api/air-quality?${params}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Air quality request failed: ${response.status}`);
+        return response.json() as Promise<{ reading?: AirQualityReading | null }>;
+      })
+      .then((payload) => setAirQualityResult({
+        key: airQualityKey,
+        reading: payload.reading ?? null,
+        failed: false,
+      }))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        console.error("Unable to load local air quality", error);
+        setAirQualityResult({ key: airQualityKey, reading: null, failed: true });
+      });
+
+    return () => controller.abort();
+  }, [airQualityKey, coordinates.lat, coordinates.lng]);
+
   return (
     <div className="space-y-4">
       <FireTelemetryCharts points={telemetry} />
+
+      <section data-testid="air-quality-section" className="rounded-2xl border border-border/60 bg-surface-muted/35 p-3.5 shadow-[0_18px_48px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Wind aria-hidden="true" className="h-4 w-4 text-red-400" />
+          <h3 className="text-sm font-semibold tracking-[-0.015em] text-foreground">{t.fireDetail.airQualityTitle}</h3>
+        </div>
+
+        {airQualityLoading ? (
+          <NewsMessage>{t.fireDetail.airQualityLoading}</NewsMessage>
+        ) : airQualityReading ? (
+          <AirQualityReadingCard reading={airQualityReading} />
+        ) : airQualityFailed ? (
+          <div className="rounded-xl bg-background/25 p-3 text-xs text-foreground/60 ring-1 ring-inset ring-border/45">
+            <p>{t.fireDetail.airQualityUnavailable}</p>
+            <button
+              type="button"
+              onClick={() => setAirQualityRetryNonce((value) => value + 1)}
+              className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 font-semibold text-foreground ring-1 ring-inset ring-border/70 transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
+            >
+              <RotateCw aria-hidden="true" className="h-3.5 w-3.5" />
+              {t.fireDetail.airQualityRetry}
+            </button>
+          </div>
+        ) : (
+          <NewsMessage>{t.fireDetail.airQualityNoMonitor}</NewsMessage>
+        )}
+
+        <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/35">{t.fireDetail.airQualitySource}</p>
+      </section>
 
       <section className="rounded-2xl border border-border/60 bg-surface-muted/35 p-3.5 shadow-[0_18px_48px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -151,6 +231,76 @@ export default function FireTelemetryDashboard({ weather, weatherFailed, locatio
         )}
         <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/35">{t.fireDetail.newsSource}</p>
       </section>
+    </div>
+  );
+}
+
+function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
+  const { t } = useLocale();
+  const tone = {
+    good: {
+      surface: "bg-emerald-500/10 ring-emerald-400/30",
+      text: "text-emerald-300",
+      dot: "bg-emerald-400",
+      label: t.fireDetail.airQualityGood,
+    },
+    moderate: {
+      surface: "bg-amber-500/10 ring-amber-400/30",
+      text: "text-amber-300",
+      dot: "bg-amber-400",
+      label: t.fireDetail.airQualityModerate,
+    },
+    "unhealthy-sensitive": {
+      surface: "bg-orange-500/10 ring-orange-400/30",
+      text: "text-orange-300",
+      dot: "bg-orange-400",
+      label: t.fireDetail.airQualitySensitive,
+    },
+    unhealthy: {
+      surface: "bg-red-500/10 ring-red-400/30",
+      text: "text-red-300",
+      dot: "bg-red-400",
+      label: t.fireDetail.airQualityUnhealthy,
+    },
+    "very-unhealthy": {
+      surface: "bg-red-950/45 ring-red-500/45",
+      text: "text-red-200",
+      dot: "bg-red-500",
+      label: t.fireDetail.airQualityVeryUnhealthy,
+    },
+    hazardous: {
+      surface: "bg-rose-950/60 ring-rose-400/55",
+      text: "text-rose-100",
+      dot: "bg-rose-400",
+      label: t.fireDetail.airQualityHazardous,
+    },
+  }[reading.category];
+
+  return (
+    <div data-testid="air-quality-reading" aria-live="polite" className={`rounded-xl p-3 ring-1 ring-inset ${tone.surface}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/55">{t.fireDetail.aqiLabel}</p>
+          <p className={`mt-1 font-mono text-3xl font-semibold leading-none tabular-nums ${tone.text}`}>{reading.aqi}</p>
+        </div>
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-semibold ${tone.text}`}>
+          <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
+          {tone.label}
+        </span>
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-white/10 pt-3 text-xs">
+        <div>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/45">PM2.5</dt>
+          <dd className="mt-1 font-mono font-semibold tabular-nums text-foreground">{reading.pm25.toFixed(1)} {reading.unit}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/45">{t.fireDetail.airQualityStationLabel}</dt>
+          <dd className="mt-1 truncate font-medium text-foreground/80">{reading.stationName ?? t.fireDetail.airQualityNearestMonitor}</dd>
+        </div>
+      </dl>
+      <p className="mt-3 text-[11px] text-foreground/50">
+        {reading.distanceKm === null ? t.fireDetail.airQualityDistanceUnknown : `${reading.distanceKm.toFixed(1)} km`} · {new Date(reading.observedAt).toLocaleString()}
+      </p>
     </div>
   );
 }

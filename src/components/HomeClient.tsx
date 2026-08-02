@@ -11,6 +11,8 @@ import { firmsAdapter } from "@/lib/wildfire/firms-adapter";
 import { eventToSelection } from "@/lib/wildfire/selection";
 import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
+import GlobalTimelineControl from "@/components/map/GlobalTimelineControl";
+import { GLOBAL_TIMELINE_HOURS } from "@/lib/wildfire/temporal";
 
 // MapLibre touches `window` on import, so the map must never render during SSR.
 const FireMap = dynamic(() => import("@/components/map/FireMap"), { ssr: false });
@@ -26,6 +28,16 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
   const [isPanelMinimized, setIsPanelMinimized] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState("global");
   const [basemapMode, setBasemapMode] = useState<BasemapMode>("satellite");
+  const [timelineHour, setTimelineHour] = useState(GLOBAL_TIMELINE_HOURS);
+  const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
+
+  useEffect(() => {
+    if (!isTimelinePlaying) return;
+    const timer = window.setInterval(() => {
+      setTimelineHour((current) => current >= GLOBAL_TIMELINE_HOURS ? 0 : current + 1);
+    }, 650);
+    return () => window.clearInterval(timer);
+  }, [isTimelinePlaying]);
 
   // The page request remains tiny: hotspot data arrives from the Worker KV
   // endpoint after hydration. NASA is only contacted by the hourly ingestor.
@@ -95,10 +107,23 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
           theme={mapTheme}
           basemapMode={basemapMode}
           countryScope={selectedCountry}
+          timelineHour={timelineHour}
         />
       </div>
 
       <TopBar basemapMode={basemapMode} onBasemapChange={setBasemapMode} />
+
+      <div className={`pointer-events-none fixed inset-x-0 z-30 flex justify-center px-3 md:right-[416px] md:left-0 md:bottom-4 ${selectedFire ? "bottom-[calc(75vh+0.75rem)]" : "bottom-[4.75rem]"}`}>
+        <GlobalTimelineControl
+          value={timelineHour}
+          isPlaying={isTimelinePlaying}
+          onChange={(nextValue) => {
+            setTimelineHour(nextValue);
+            setIsTimelinePlaying(false);
+          }}
+          onTogglePlayback={() => setIsTimelinePlaying((current) => !current)}
+        />
+      </div>
 
       {/* The side panel is permanently docked now (Global Overview when
           nothing is selected) — desktop only, and kept clear of its 400px

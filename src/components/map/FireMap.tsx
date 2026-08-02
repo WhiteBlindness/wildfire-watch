@@ -6,7 +6,8 @@ import type { GeoJSONSource, Map as MapLibreMap, MapLibreEvent } from "maplibre-
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
 import { eventsToClusterSelection, eventToSelection } from "@/lib/wildfire/selection";
-import { eventsToMarkerGeoJSON, selectedEventToPolygonGeoJSON } from "@/lib/wildfire/geojson";
+import { selectedEventToPolygonGeoJSON } from "@/lib/wildfire/geojson";
+import { eventsToTemporalMarkerGeoJSON } from "@/lib/wildfire/temporal";
 import { SEVERITY_COLOR } from "@/lib/wildfire/colors";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
 
@@ -108,9 +109,10 @@ interface FireMapProps {
   theme: "dark" | "light";
   basemapMode: BasemapMode;
   countryScope: string;
+  timelineHour: number;
 }
 
-export default function FireMap({ events, perimeterEvents, selectedFire, onSelect, theme, basemapMode, countryScope }: FireMapProps) {
+export default function FireMap({ events, perimeterEvents, selectedFire, onSelect, theme, basemapMode, countryScope, timelineHour }: FireMapProps) {
   const mapRef = useRef<MapRef>(null);
   const [isHoveringInteractiveFeature, setIsHoveringInteractiveFeature] = useState(false);
 
@@ -119,7 +121,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     () => selectedEventToPolygonGeoJSON(perimeterEvents, selectedFire?.kind === "point" ? selectedFire.id : null),
     [perimeterEvents, selectedFire],
   );
-  const markerData = useMemo(() => eventsToMarkerGeoJSON(events), [events]);
+  const markerData = useMemo(() => eventsToTemporalMarkerGeoJSON(events, timelineHour), [events, timelineHour]);
 
   const eventById = useMemo(() => new globalThis.Map(events.map((event) => [event.id, event])), [events]);
 
@@ -330,20 +332,20 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         cluster
         clusterRadius={50}
         clusterMaxZoom={10}
-        clusterProperties={{ sumFrpMw: ["+", ["get", "frpMw"]] }}
+        clusterProperties={{ sumTemporalFrpMw: ["+", ["get", "temporalFrpMw"]] }}
       >
         <Layer
           id={CLUSTER_GLOW_LAYER_ID}
           type="circle"
           filter={["has", "point_count"]}
           paint={{
-            "circle-radius": [
-              "interpolate", ["linear"], ["get", "point_count"],
-              2, 24,
-              10, 30,
-              50, 38,
-              250, 47,
-              1000, 55,
+              "circle-radius": [
+              "interpolate", ["linear"], ["get", "sumTemporalFrpMw"],
+              0, 16,
+              100, 23,
+              500, 31,
+              2500, 41,
+              10000, 52,
             ],
             "circle-color": "#ef4444",
             "circle-opacity": 0.22,
@@ -356,11 +358,11 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
           filter={["has", "point_count"]}
           paint={{
             "circle-radius": [
-              "interpolate", ["linear"], ["get", "point_count"],
-              2, 24,
-              50, 34,
-              250, 42,
-              1000, 50,
+              "interpolate", ["linear"], ["get", "sumTemporalFrpMw"],
+              0, 16,
+              500, 29,
+              2500, 39,
+              10000, 50,
             ],
             "circle-opacity": 0,
             "circle-stroke-opacity": 0,
@@ -372,15 +374,15 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
           filter={["has", "point_count"]}
           paint={{
             "circle-radius": [
-              "interpolate", ["linear"], ["get", "point_count"],
-              2, 18,
-              10, 23,
-              50, 30,
-              250, 38,
-              1000, 46,
+              "interpolate", ["linear"], ["get", "sumTemporalFrpMw"],
+              0, 11,
+              100, 16,
+              500, 23,
+              2500, 33,
+              10000, 44,
             ],
             "circle-color": [
-              "interpolate", ["linear"], ["get", "sumFrpMw"],
+              "interpolate", ["linear"], ["get", "sumTemporalFrpMw"],
               0, "#f5c451",
               250, "#f59e0b",
               1000, "#ef4444",
@@ -420,9 +422,13 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
           filter={["!", ["has", "point_count"]]}
           paint={{
             "circle-radius": [
-              "case",
-              ["==", ["get", "fireId"], selectedFire?.kind === "point" ? selectedFire.id : ""], 11,
-              7,
+              "*",
+              [
+                "case",
+                ["==", ["get", "fireId"], selectedFire?.kind === "point" ? selectedFire.id : ""], 11,
+                7,
+              ],
+              ["coalesce", ["get", "temporalRadiusScale"], 1],
             ],
             "circle-color": [
               "match",
@@ -438,6 +444,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
               1.5,
             ],
             "circle-stroke-color": "#ffffff",
+            "circle-opacity": ["coalesce", ["get", "temporalOpacity"], 1],
           }}
         />
       </Source>

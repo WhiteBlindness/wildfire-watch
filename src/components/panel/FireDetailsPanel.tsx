@@ -216,6 +216,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
         </div>
 
       <FireTelemetryDashboard
+        coordinates={selection.location}
         weather={weather}
         weatherFailed={weatherFailed}
         locationName={locationName ?? fallbackLocationName}
