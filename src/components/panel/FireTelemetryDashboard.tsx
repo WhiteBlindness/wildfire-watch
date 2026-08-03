@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { CloudRain, Compass, Droplets, ExternalLink, Gauge, Newspaper, RotateCw, Thermometer, Wind } from "lucide-react";
+import { CloudRain, Compass, Droplets, ExternalLink, Gauge, LoaderCircle, Newspaper, RotateCw, Thermometer, Wind } from "lucide-react";
 import type { FireWeather } from "@/lib/wildfire/types";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
@@ -40,28 +40,26 @@ interface AirQualityReading {
   aqiMethod: string;
 }
 
-interface AirQualityResult {
-  key: string;
-  reading: AirQualityReading | null;
-  failed: boolean;
+type AqiError = "no-nearby-monitor" | "unavailable";
+
+interface AirQualityResponse {
+  reading?: AirQualityReading | null;
+  availability?: "available" | "no-nearby-monitor" | "unconfigured" | "upstream-error";
 }
 
 export default function FireTelemetryDashboard({ coordinates, weather, weatherFailed, locationName, selectionId }: FireTelemetryDashboardProps) {
   const { locale, t } = useLocale();
   const [newsResult, setNewsResult] = useState<NewsResult | null>(null);
-  const [airQualityResult, setAirQualityResult] = useState<AirQualityResult | null>(null);
+  const [isFetchingAQI, setIsFetchingAQI] = useState(true);
+  const [aqiData, setAqiData] = useState<AirQualityReading | null>(null);
+  const [aqiError, setAqiError] = useState<AqiError | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const [airQualityRetryNonce, setAirQualityRetryNonce] = useState(0);
   const requestKey = `${selectionId}:${locale}:${locationName ?? "pending"}:${retryNonce}`;
-  const airQualityKey = `${selectionId}:${coordinates.lat.toFixed(4)}:${coordinates.lng.toFixed(4)}:${airQualityRetryNonce}`;
   const hasCurrentResult = newsResult?.key === requestKey;
-  const hasCurrentAirQuality = airQualityResult?.key === airQualityKey;
   const articles = hasCurrentResult ? newsResult.articles : [];
   const newsFailed = hasCurrentResult ? newsResult.failed : false;
   const newsLoading = Boolean(locationName && !hasCurrentResult);
-  const airQualityReading = hasCurrentAirQuality ? airQualityResult.reading : null;
-  const airQualityFailed = hasCurrentAirQuality ? airQualityResult.failed : false;
-  const airQualityLoading = !hasCurrentAirQuality;
 
   useEffect(() => {
     if (!locationName) return;
@@ -94,49 +92,61 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
 
     fetch(`/api/air-quality?${params}`, { signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok) throw new Error(`Air quality request failed: ${response.status}`);
-        return response.json() as Promise<{ reading?: AirQualityReading | null }>;
+        const payload = await response.json() as AirQualityResponse;
+        if (!response.ok) throw new Error(`Air quality request failed: ${response.status} (${payload.availability ?? "unknown"})`);
+        return payload;
       })
-      .then((payload) => setAirQualityResult({
-        key: airQualityKey,
-        reading: payload.reading ?? null,
-        failed: false,
-      }))
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        if (payload.reading) {
+          setAqiData(payload.reading);
+          setAqiError(null);
+        } else {
+          setAqiData(null);
+          setAqiError("no-nearby-monitor");
+        }
+        setIsFetchingAQI(false);
+      })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         console.error("Unable to load local air quality", error);
-        setAirQualityResult({ key: airQualityKey, reading: null, failed: true });
+        setAqiData(null);
+        setAqiError("unavailable");
+        setIsFetchingAQI(false);
       });
 
     return () => controller.abort();
-  }, [airQualityKey, coordinates.lat, coordinates.lng]);
+  }, [airQualityRetryNonce, coordinates.lat, coordinates.lng, selectionId]);
+
+  function retryAirQuality(): void {
+    setIsFetchingAQI(true);
+    setAqiData(null);
+    setAqiError(null);
+    setAirQualityRetryNonce((value) => value + 1);
+  }
 
   return (
     <div className="space-y-4">
-      <section data-testid="air-quality-section" className="rounded-2xl border border-border/60 bg-surface-muted/35 p-3.5 shadow-[0_18px_48px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:p-4">
+      <section
+        data-testid="air-quality-section"
+        aria-busy={isFetchingAQI}
+        aria-labelledby="air-quality-title"
+        className="rounded-2xl border border-border/60 bg-surface-muted/35 p-3.5 shadow-[0_18px_48px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:p-4"
+      >
         <div className="mb-3 flex items-center gap-2">
           <Wind aria-hidden="true" className="h-4 w-4 text-red-400" />
-          <h3 className="text-sm font-semibold tracking-[-0.015em] text-foreground">{t.fireDetail.airQualityTitle}</h3>
+          <h3 id="air-quality-title" className="text-sm font-semibold tracking-[-0.015em] text-foreground">{t.fireDetail.airQualityTitle}</h3>
         </div>
 
-        {airQualityLoading ? (
-          <NewsMessage>{t.fireDetail.airQualityLoading}</NewsMessage>
-        ) : airQualityReading ? (
-          <AirQualityReadingCard reading={airQualityReading} />
-        ) : airQualityFailed ? (
-          <div className="rounded-xl bg-background/25 p-3 text-xs text-foreground/60 ring-1 ring-inset ring-border/45">
-            <p>{t.fireDetail.airQualityUnavailable}</p>
-            <button
-              type="button"
-              onClick={() => setAirQualityRetryNonce((value) => value + 1)}
-              className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 font-semibold text-foreground ring-1 ring-inset ring-border/70 transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
-            >
-              <RotateCw aria-hidden="true" className="h-3.5 w-3.5" />
-              {t.fireDetail.airQualityRetry}
-            </button>
-          </div>
+        {isFetchingAQI ? (
+          <AirQualityLoadingState />
+        ) : aqiData ? (
+          <AirQualityReadingCard reading={aqiData} />
         ) : (
-          <NewsMessage>{t.fireDetail.airQualityNoMonitor}</NewsMessage>
+          <AirQualityUnavailableState
+            message={aqiError === "no-nearby-monitor" ? t.fireDetail.airQualityNoMonitor : t.fireDetail.airQualityUnavailable}
+            onRetry={aqiError === "unavailable" ? retryAirQuality : undefined}
+          />
         )}
 
         <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/35">{t.fireDetail.airQualitySource}</p>
@@ -231,8 +241,54 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
   );
 }
 
-function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
+function AirQualityLoadingState() {
   const { t } = useLocale();
+
+  return (
+    <div
+      data-testid="air-quality-loading"
+      role="status"
+      aria-live="polite"
+      className="min-h-28 rounded-xl bg-neutral-100/80 p-3.5 ring-1 ring-inset ring-neutral-200 dark:bg-neutral-950/35 dark:ring-neutral-800"
+    >
+      <div className="flex items-center gap-2.5 text-xs font-medium text-foreground/70">
+        <LoaderCircle aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin text-red-400 motion-reduce:animate-none" />
+        <span>{t.fireDetail.airQualityLoading}</span>
+      </div>
+      <div aria-hidden="true" className="mt-4 grid grid-cols-2 gap-3">
+        <span className="h-10 animate-pulse rounded-lg bg-neutral-200/80 motion-reduce:animate-none dark:bg-neutral-800/75" />
+        <span className="h-10 animate-pulse rounded-lg bg-neutral-200/80 motion-reduce:animate-none dark:bg-neutral-800/75" />
+      </div>
+    </div>
+  );
+}
+
+function AirQualityUnavailableState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const { t } = useLocale();
+
+  return (
+    <div
+      data-testid="air-quality-fallback"
+      aria-live="polite"
+      className="min-h-24 rounded-xl bg-neutral-100/80 p-3.5 text-xs leading-5 text-neutral-600 ring-1 ring-inset ring-neutral-200 dark:bg-neutral-950/35 dark:text-neutral-400 dark:ring-neutral-800"
+    >
+      <p>{message}</p>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 font-semibold text-foreground ring-1 ring-inset ring-border/70 transition-colors hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
+        >
+          <RotateCw aria-hidden="true" className="h-3.5 w-3.5" />
+          {t.fireDetail.airQualityRetry}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
+  const { locale, t } = useLocale();
   const tone = {
     good: {
       surface: "bg-emerald-500/10 ring-emerald-400/30",
@@ -247,9 +303,9 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
       label: t.fireDetail.airQualityModerate,
     },
     "unhealthy-sensitive": {
-      surface: "bg-orange-500/10 ring-orange-400/30",
-      text: "text-orange-700 dark:text-orange-300",
-      dot: "bg-orange-400",
+      surface: "bg-yellow-500/10 ring-yellow-400/30",
+      text: "text-yellow-800 dark:text-yellow-300",
+      dot: "bg-yellow-400",
       label: t.fireDetail.airQualitySensitive,
     },
     unhealthy: {
@@ -259,15 +315,15 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
       label: t.fireDetail.airQualityUnhealthy,
     },
     "very-unhealthy": {
-      surface: "bg-red-100/80 ring-red-500/45 dark:bg-red-950/45",
-      text: "text-red-800 dark:text-red-200",
-      dot: "bg-red-500",
+      surface: "bg-violet-100/80 ring-violet-500/40 dark:bg-violet-950/45",
+      text: "text-violet-800 dark:text-violet-200",
+      dot: "bg-violet-500",
       label: t.fireDetail.airQualityVeryUnhealthy,
     },
     hazardous: {
-      surface: "bg-rose-100/80 ring-rose-400/55 dark:bg-rose-950/60",
-      text: "text-rose-800 dark:text-rose-100",
-      dot: "bg-rose-400",
+      surface: "bg-purple-100/85 ring-purple-600/50 dark:bg-purple-950/60",
+      text: "text-purple-900 dark:text-purple-100",
+      dot: "bg-purple-500",
       label: t.fireDetail.airQualityHazardous,
     },
   }[reading.category];
@@ -295,7 +351,7 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
         </div>
       </dl>
       <p className="mt-3 text-[11px] text-foreground/50">
-        {reading.distanceKm === null ? t.fireDetail.airQualityDistanceUnknown : `${reading.distanceKm.toFixed(1)} km`} · {new Date(reading.observedAt).toLocaleString()}
+        {reading.distanceKm === null ? t.fireDetail.airQualityDistanceUnknown : `${reading.distanceKm.toFixed(1)} km`} · {new Date(reading.observedAt).toLocaleString(locale === "pt" ? "pt-PT" : "en-GB")}
       </p>
     </div>
   );

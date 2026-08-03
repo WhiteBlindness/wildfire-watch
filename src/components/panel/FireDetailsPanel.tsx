@@ -194,6 +194,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
         </div>
 
       <FireTelemetryDashboard
+        key={selection.id}
         coordinates={selection.location}
         weather={weather}
         weatherFailed={weatherFailed}
