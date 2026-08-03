@@ -22,7 +22,7 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
     <section
       aria-label={t.timeline.controlLabel}
       data-testid="global-timeline"
-      className="pointer-events-auto flex w-[min(31rem,calc(100vw-1.5rem))] items-center gap-3 rounded-2xl border border-neutral-200 bg-white/90 px-3 py-2.5 text-neutral-900 shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/90 dark:text-neutral-100"
+      className="pointer-events-auto flex w-[min(31rem,calc(100vw-1.5rem))] flex-nowrap items-center gap-4 rounded-2xl border border-neutral-200 bg-white/90 px-3 py-2.5 text-neutral-900 shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/90 dark:text-neutral-100"
     >
       <button
         type="button"
@@ -47,7 +47,7 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
               <Info aria-hidden="true" className="h-3.5 w-3.5" />
             </span>
           </span>
-          <output className="font-mono text-xs font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{currentLabel}</output>
+          <output className="shrink-0 font-mono text-xs font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{currentLabel}</output>
         </div>
         <input
           aria-label={t.timeline.sliderLabel}

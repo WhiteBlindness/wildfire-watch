@@ -48,7 +48,7 @@ export default function SidePanel({
 
   return (
     <aside
-      className={`mission-panel-shell fixed inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden rounded-t-[1.5rem] border-t border-neutral-200 bg-white/90 shadow-[0_-16px_48px_rgba(0,0,0,0.18)] backdrop-blur-md transition-[max-height,transform,background-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:border-neutral-800 dark:bg-neutral-900/90 md:inset-y-0 md:right-0 md:left-auto md:top-0 md:h-full md:max-h-none md:w-[400px] md:translate-y-0 md:rounded-none md:rounded-l-2xl md:border-t-0 md:border-l md:shadow-[-18px_0_56px_rgba(0,0,0,0.24)] ${
+      className={`mission-panel-shell fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden rounded-t-[1.5rem] border-t border-neutral-200 bg-white shadow-[0_-20px_60px_rgba(0,0,0,0.28)] transition-[max-height,transform,background-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:border-neutral-800 dark:bg-neutral-900 md:inset-y-0 md:right-0 md:left-auto md:top-0 md:h-full md:max-h-none md:w-[400px] md:translate-y-0 md:rounded-none md:rounded-l-2xl md:border-t-0 md:border-l md:bg-white/90 md:shadow-[-18px_0_56px_rgba(0,0,0,0.24)] md:backdrop-blur-md md:dark:bg-neutral-900/90 ${
         detailOpen ? "max-h-[75vh]" : "max-h-[60vh]"
       } ${isMinimized ? "translate-y-[calc(100%-4rem)]" : "translate-y-0"}`}
     >
