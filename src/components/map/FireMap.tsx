@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import Map, { Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
+import Map, { AttributionControl, Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { GeoJSONSource, Map as MapLibreMap, MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
@@ -31,6 +31,7 @@ const SATELLITE_TILE_URL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const SATELLITE_SOURCE_ID = "satellite-src";
 const SATELLITE_LAYER_ID = "satellite-layer";
+const SATELLITE_ATTRIBUTION = "© Esri, Maxar, Earthstar Geographics, and the GIS User Community";
 
 const MARKER_LAYER_ID = "fire-markers";
 const MARKER_HIT_AREA_LAYER_ID = "fire-marker-hit-area";
@@ -40,20 +41,80 @@ const CLUSTER_GLOW_LAYER_ID = "major-fire-events-glow";
 const CLUSTER_HIT_AREA_LAYER_ID = "major-fire-events-hit-area";
 const CLUSTER_COUNT_LAYER_ID = "major-fire-events-count";
 const MARKER_SOURCE_ID = "fire-markers-src";
+const SELECTED_MARKER_SOURCE_ID = "selected-fire-marker-src";
+const SELECTED_MARKER_GLOW_LAYER_ID = "selected-fire-marker-glow";
+const SELECTED_MARKER_RING_LAYER_ID = "selected-fire-marker-ring";
 // Every layer whose features carry a `fireId` property — clicking or
 // hovering any of them (marker, burned-area fill, or heatmap core) selects
 // the fire, not just the small marker dot.
-const INTERACTIVE_LAYER_IDS = [CLUSTER_HIT_AREA_LAYER_ID, CLUSTER_LAYER_ID, MARKER_HIT_AREA_LAYER_ID, MARKER_LAYER_ID, POLYGON_FILL_LAYER_ID];
+const INTERACTIVE_LAYER_IDS = [
+  CLUSTER_HIT_AREA_LAYER_ID,
+  CLUSTER_LAYER_ID,
+  MARKER_HIT_AREA_LAYER_ID,
+  MARKER_LAYER_ID,
+  POLYGON_FILL_LAYER_ID,
+];
+const INTERACTION_PRIORITY = [
+  CLUSTER_HIT_AREA_LAYER_ID,
+  CLUSTER_LAYER_ID,
+  MARKER_HIT_AREA_LAYER_ID,
+  MARKER_LAYER_ID,
+  POLYGON_FILL_LAYER_ID,
+] as const;
+const POINTER_QUERY_RADIUS = 12;
 
 // Centered on Iberia/the Atlantic rather than the equator — frames Europe,
 // North Africa, and the Atlantic on desktop instead of cutting Europe off
 // to one side. Also the "Voltar ao mapa global" fly-back target below.
 const WORLD_VIEW = { longitude: -9.0, latitude: 39.0, zoom: 3 };
 const FIRE_DETAIL_ZOOM = 12;
-// Cinematic, not instant — essential:true keeps the animation even under
-// prefers-reduced-motion, since the camera move here carries real meaning
-// (which fire is now in view), not just decoration.
-const FLY_DURATION_MS = 1800;
+// A controlled, soft-spring-like flight that keeps the selected point visible
+// in the unobstructed map area beside the mission panel.
+const FLY_DURATION_MS = 1350;
+
+type InteractiveFeature = NonNullable<MapLayerMouseEvent["features"]>[number];
+
+function pickInteractiveFeature(features: readonly InteractiveFeature[] | undefined): InteractiveFeature | null {
+  if (!features || features.length === 0) return null;
+  for (const layerId of INTERACTION_PRIORITY) {
+    const match = features.find((feature) => feature.layer?.id === layerId);
+    if (match) return match;
+  }
+  return null;
+}
+
+function getCameraPadding(panelOpen: boolean): { top: number; right: number; bottom: number; left: number } {
+  const isDesktop = window.innerWidth >= 768;
+  return {
+    top: 88,
+    right: isDesktop ? 440 : 24,
+    bottom: isDesktop
+      ? 56
+      : panelOpen
+        ? Math.min(Math.round(window.innerHeight * 0.46), Math.max(120, window.innerHeight - 120))
+        : 88,
+    left: 40,
+  };
+}
+
+function flyToLocation(
+  map: MapLibreMap,
+  location: { lng: number; lat: number },
+  zoom: number,
+  panelOpen: boolean,
+): void {
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  map.flyTo({
+    center: [location.lng, location.lat],
+    zoom,
+    padding: getCameraPadding(panelOpen),
+    duration: reducedMotion ? 0 : FLY_DURATION_MS,
+    speed: 0.9,
+    curve: 1.42,
+    easing: (value) => 1 - ((1 - value) ** 3),
+    essential: !reducedMotion,
+  });
+}
 
 function findHybridAnchor(map: MapLibreMap): string | undefined {
   const layers = map.getStyle().layers ?? [];
@@ -74,7 +135,7 @@ function syncSatelliteLayer(map: MapLibreMap, mode: BasemapMode, theme: "dark" |
       type: "raster",
       tiles: [SATELLITE_TILE_URL],
       tileSize: 256,
-      attribution: "Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+      attribution: SATELLITE_ATTRIBUTION,
     });
   }
 
@@ -106,29 +167,49 @@ interface FireMapProps {
   perimeterEvents: WildfireEvent[];
   selectedFire: FireSelection | null;
   onSelect: (selection: FireSelection | null) => void;
+  onMapLoad: () => void;
   theme: "dark" | "light";
   basemapMode: BasemapMode;
   countryScope: string;
   timelineHour: number;
 }
 
-export default function FireMap({ events, perimeterEvents, selectedFire, onSelect, theme, basemapMode, countryScope, timelineHour }: FireMapProps) {
+export default function FireMap({ events, perimeterEvents, selectedFire, onSelect, onMapLoad, theme, basemapMode, countryScope, timelineHour }: FireMapProps) {
   const mapRef = useRef<MapRef>(null);
+  const hasReportedMapLoadRef = useRef(false);
   const [isHoveringInteractiveFeature, setIsHoveringInteractiveFeature] = useState(false);
 
   const selectionRequestRef = useRef(0);
   const polygonData = useMemo(
     () => selectedEventToPolygonGeoJSON(perimeterEvents, selectedFire?.kind === "point" ? selectedFire.id : null),
-    [perimeterEvents, selectedFire],
+    [perimeterEvents, selectedFire?.id, selectedFire?.kind],
   );
   const markerData = useMemo(() => eventsToTemporalMarkerGeoJSON(events, timelineHour), [events, timelineHour]);
+  const selectedMarkerData: GeoJSON.FeatureCollection = (
+    selectedFire?.kind === "point"
+      ? {
+          type: "FeatureCollection",
+          features: [{
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [selectedFire.location.lng, selectedFire.location.lat] },
+            properties: { fireId: selectedFire.id },
+          }],
+      }
+      : { type: "FeatureCollection", features: [] }
+  );
 
   const eventById = useMemo(() => new globalThis.Map(events.map((event) => [event.id, event])), [events]);
 
   const handleClick = useCallback(
     async (e: MapLayerMouseEvent) => {
-      const feature = e.features?.[0];
       const requestId = ++selectionRequestRef.current;
+      const map = mapRef.current?.getMap();
+      const feature = pickInteractiveFeature(e.features) ?? (map
+        ? pickInteractiveFeature(map.queryRenderedFeatures([
+            [e.point.x - POINTER_QUERY_RADIUS, e.point.y - POINTER_QUERY_RADIUS],
+            [e.point.x + POINTER_QUERY_RADIUS, e.point.y + POINTER_QUERY_RADIUS],
+          ], { layers: INTERACTIVE_LAYER_IDS }))
+        : null);
       if (!feature) {
         onSelect(null);
         return;
@@ -137,7 +218,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
       if (feature.properties?.cluster && feature.geometry.type === "Point") {
         const clusterId = Number(feature.properties.cluster_id);
         const pointCount = Number(feature.properties.point_count);
-        const source = mapRef.current?.getMap().getSource(MARKER_SOURCE_ID) as GeoJSONSource | undefined;
+        const source = map?.getSource(MARKER_SOURCE_ID) as GeoJSONSource | undefined;
         if (!source || !Number.isFinite(clusterId) || !Number.isFinite(pointCount)) return;
 
         try {
@@ -151,14 +232,10 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
             .filter((event): event is WildfireEvent => Boolean(event));
           const [lng, lat] = feature.geometry.coordinates;
           const selection = eventsToClusterSelection(members, clusterId, { lng, lat });
-          if (selection) onSelect(selection);
-
-          mapRef.current?.getMap().flyTo({
-            center: [lng, lat],
-            zoom: Math.min(expansionZoom, 9),
-            duration: FLY_DURATION_MS,
-            essential: true,
-          });
+          if (selection) {
+            onSelect(selection);
+            if (map) flyToLocation(map, { lng, lat }, Math.min(expansionZoom, FIRE_DETAIL_ZOOM), true);
+          }
         } catch (error) {
           console.error("Unable to inspect fire cluster", error);
         }
@@ -173,7 +250,14 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   );
 
   const handleMove = useCallback((e: MapLayerMouseEvent) => {
-    setIsHoveringInteractiveFeature(Boolean(e.features?.[0]));
+    const map = mapRef.current?.getMap();
+    const feature = pickInteractiveFeature(e.features) ?? (map
+      ? pickInteractiveFeature(map.queryRenderedFeatures([
+          [e.point.x - POINTER_QUERY_RADIUS, e.point.y - POINTER_QUERY_RADIUS],
+          [e.point.x + POINTER_QUERY_RADIUS, e.point.y + POINTER_QUERY_RADIUS],
+        ], { layers: INTERACTIVE_LAYER_IDS }))
+      : null);
+    setIsHoveringInteractiveFeature(Boolean(feature));
   }, []);
 
   const applyStyleEnhancements = useCallback((map: MapLibreMap) => {
@@ -184,8 +268,14 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   }, [basemapMode, theme]);
 
   const handleLoad = useCallback(
-    (e: MapLibreEvent) => applyStyleEnhancements(e.target),
-    [applyStyleEnhancements],
+    (e: MapLibreEvent) => {
+      applyStyleEnhancements(e.target);
+      if (!hasReportedMapLoadRef.current) {
+        hasReportedMapLoadRef.current = true;
+        onMapLoad();
+      }
+    },
+    [applyStyleEnhancements, onMapLoad],
   );
 
   const handleStyleData = useCallback(
@@ -200,9 +290,9 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     if (map?.isStyleLoaded()) applyStyleEnhancements(map);
   }, [applyStyleEnhancements]);
 
-  // Cinematic camera: fly to the selected fire (from a map click or a panel
-  // click, either way — this only cares about the resulting selectedId), or
-  // back out to the world view once nothing is selected.
+  // One camera transition per selection identity. Point clicks only update
+  // selection here; this effect owns their flight so map and panel selection
+  // cannot both animate the camera.
   useEffect(() => {
     const map = mapRef.current?.getMap();
     if (!map) return;
@@ -210,46 +300,31 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     if (selectedFire?.kind === "cluster") return;
     try {
       if (selectedFire?.kind === "point") {
-        map.flyTo({
-          center: [selectedFire.location.lng, selectedFire.location.lat],
-          zoom: FIRE_DETAIL_ZOOM,
-          duration: FLY_DURATION_MS,
-          essential: true,
-        });
+        flyToLocation(map, selectedFire.location, FIRE_DETAIL_ZOOM, true);
       } else if (countryScope !== "global" && events.length > 0) {
         if (events.length === 1) {
-          map.flyTo({
-            center: [events[0].location.lng, events[0].location.lat],
-            zoom: 7,
-            duration: FLY_DURATION_MS,
-            essential: true,
-          });
+          flyToLocation(map, events[0].location, 7, false);
         } else {
           const lngs = events.map((event) => event.location.lng);
           const lats = events.map((event) => event.location.lat);
-          const desktopPanel = window.innerWidth >= 768 ? 440 : 24;
+          const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
           map.fitBounds(
             [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
             {
-              padding: { top: 88, right: desktopPanel, bottom: 88, left: 40 },
+              padding: getCameraPadding(false),
               maxZoom: 7,
-              duration: FLY_DURATION_MS,
-              essential: true,
+              duration: reducedMotion ? 0 : FLY_DURATION_MS,
+              essential: !reducedMotion,
             },
           );
         }
       } else {
-        map.flyTo({
-          center: [WORLD_VIEW.longitude, WORLD_VIEW.latitude],
-          zoom: WORLD_VIEW.zoom,
-          duration: FLY_DURATION_MS,
-          essential: true,
-        });
+        flyToLocation(map, { lng: WORLD_VIEW.longitude, lat: WORLD_VIEW.latitude }, WORLD_VIEW.zoom, false);
       }
     } catch {
       // Stale/torn-down map instance — nothing to recover, just skip.
     }
-  }, [selectedFire, events, countryScope]);
+  }, [countryScope, events, selectedFire?.id, selectedFire?.kind, selectedFire?.location]);
 
   return (
     <Map
@@ -266,10 +341,11 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
       onMouseMove={handleMove}
       onMouseLeave={() => setIsHoveringInteractiveFeature(false)}
       cursor={isHoveringInteractiveFeature ? "pointer" : "grab"}
-      attributionControl={{ compact: true }}
+      attributionControl={false}
       onLoad={handleLoad}
       onStyleData={handleStyleData}
     >
+      <AttributionControl key={basemapMode} compact position="bottom-right" />
       {/* Satellite raster is managed imperatively beneath vector overlays. */}
 
       {/* Native clusters replace the former 6,000-point macro heatmap. */}
@@ -445,6 +521,32 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
             ],
             "circle-stroke-color": "#ffffff",
             "circle-opacity": ["coalesce", ["get", "temporalOpacity"], 1],
+          }}
+        />
+      </Source>
+
+      {/* This source is intentionally separate from the filtered, clustered
+          marker source so selection stays visible during timeline playback. */}
+      <Source id={SELECTED_MARKER_SOURCE_ID} type="geojson" data={selectedMarkerData}>
+        <Layer
+          id={SELECTED_MARKER_GLOW_LAYER_ID}
+          type="circle"
+          paint={{
+            "circle-radius": 19,
+            "circle-color": "#ef4444",
+            "circle-opacity": 0.16,
+            "circle-blur": 0.7,
+          }}
+        />
+        <Layer
+          id={SELECTED_MARKER_RING_LAYER_ID}
+          type="circle"
+          paint={{
+            "circle-radius": 15,
+            "circle-color": "rgba(239,68,68,0.08)",
+            "circle-opacity": 0.9,
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-width": 3,
           }}
         />
       </Source>

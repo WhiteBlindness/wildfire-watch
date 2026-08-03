@@ -4,10 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { FireSelection, FireWeather } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
 import { estimateBurnedAreaHectares } from "@/lib/wildfire/fire-estimation";
-import { createSimulatedTelemetry } from "@/lib/wildfire/telemetry";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireTelemetryDashboard from "./FireTelemetryDashboard";
-import AdSlot from "@/components/ui/AdSlot";
 
 interface FireDetailsPanelProps {
   selection: FireSelection;
@@ -41,26 +39,6 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
     return parts.join(", ") || `${selection.location.lat.toFixed(2)}, ${selection.location.lng.toFixed(2)}`;
   }, [selection.country, selection.location.lat, selection.location.lng, selection.region]);
 
-  const telemetry = useMemo(() => {
-    const severity = selection.totalFrpMw >= 150
-      ? "extreme"
-      : selection.totalFrpMw >= 50
-        ? "high"
-        : selection.totalFrpMw >= 10
-          ? "moderate"
-          : "low";
-    const simulated = createSimulatedTelemetry(
-      selection.id,
-      selection.detectedAt,
-      selection.totalFrpMw,
-      severity,
-    );
-    const simulatedPeakArea = Math.max(...simulated.points.map((point) => point.areaBurned), 1);
-    return simulated.points.map((point) => ({
-      ...point,
-      areaBurned: Math.max(1, Math.round((point.areaBurned / simulatedPeakArea) * estimatedAreaHectares)),
-    }));
-  }, [estimatedAreaHectares, selection.detectedAt, selection.id, selection.totalFrpMw]);
   useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams({
@@ -221,12 +199,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
         weatherFailed={weatherFailed}
         locationName={locationName ?? fallbackLocationName}
         selectionId={selection.id}
-        telemetry={telemetry}
       />
-
-      <div className="mt-auto pt-2">
-        <AdSlot variant="panel-rectangle" />
-      </div>
     </div>
   );
 }

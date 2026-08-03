@@ -3,16 +3,14 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { CloudRain, Compass, Droplets, ExternalLink, Gauge, Newspaper, RotateCw, Thermometer, Wind } from "lucide-react";
-import type { FireTelemetryPoint, FireWeather } from "@/lib/wildfire/types";
+import type { FireWeather } from "@/lib/wildfire/types";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
-import FireTelemetryCharts from "./FireTelemetryCharts";
 
 interface FireTelemetryDashboardProps {
   coordinates: { lat: number; lng: number };
   weather: FireWeather | null;
   locationName: string | null;
   selectionId: string;
-  telemetry: FireTelemetryPoint[];
   weatherFailed: boolean;
 }
 
@@ -48,7 +46,7 @@ interface AirQualityResult {
   failed: boolean;
 }
 
-export default function FireTelemetryDashboard({ coordinates, weather, weatherFailed, locationName, selectionId, telemetry }: FireTelemetryDashboardProps) {
+export default function FireTelemetryDashboard({ coordinates, weather, weatherFailed, locationName, selectionId }: FireTelemetryDashboardProps) {
   const { locale, t } = useLocale();
   const [newsResult, setNewsResult] = useState<NewsResult | null>(null);
   const [airQualityResult, setAirQualityResult] = useState<AirQualityResult | null>(null);
@@ -115,8 +113,6 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
 
   return (
     <div className="space-y-4">
-      <FireTelemetryCharts points={telemetry} />
-
       <section data-testid="air-quality-section" className="rounded-2xl border border-border/60 bg-surface-muted/35 p-3.5 shadow-[0_18px_48px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:p-4">
         <div className="mb-3 flex items-center gap-2">
           <Wind aria-hidden="true" className="h-4 w-4 text-red-400" />

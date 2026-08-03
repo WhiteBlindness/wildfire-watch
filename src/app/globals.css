@@ -199,6 +199,47 @@ body {
 
 .maplibregl-ctrl-attrib {
   font-size: 11px;
+  line-height: 1.35;
+}
+
+.wildfire-watch .maplibregl-ctrl-bottom-right {
+  right: 0.75rem;
+  bottom: 10.5rem;
+  z-index: 35;
+  pointer-events: auto;
+}
+
+.wildfire-watch .maplibregl-ctrl-attrib {
+  max-width: min(22rem, calc(100vw - 1.5rem));
+  color: #e8eaed;
+  background: rgba(10, 13, 18, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 3px 6px;
+  backdrop-filter: blur(10px);
+}
+
+.wildfire-watch .maplibregl-ctrl-attrib a {
+  color: inherit;
+}
+
+html:not(.dark) .wildfire-watch .maplibregl-ctrl-attrib {
+  color: #12151a;
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(18, 21, 26, 0.16);
+}
+
+@media (max-width: 767px) {
+  [data-map-panel-open="true"] .wildfire-watch-map .maplibregl-ctrl-bottom-right {
+    bottom: calc(75vh + 0.75rem);
+  }
+}
+
+@media (min-width: 768px) {
+  .wildfire-watch .maplibregl-ctrl-bottom-right {
+    right: 416px;
+    bottom: 7rem;
+  }
 }
 
 @layer base {

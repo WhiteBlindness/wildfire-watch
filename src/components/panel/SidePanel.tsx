@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
+import type { FeedLoadStatus, FireSelection, WildfireEvent, WildfireFeedSnapshot } from "@/lib/wildfire/types";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireDetailsPanel from "./FireDetailsPanel";
 import GlobalOverview from "./GlobalOverview";
@@ -11,24 +11,26 @@ interface SidePanelProps {
   events: WildfireEvent[];
   selectedFire: FireSelection | null;
   isMinimized: boolean;
-  onSelect: (id: string) => void;
   onClose: () => void;
   onToggleMinimized: () => void;
   countries: string[];
   selectedCountry: string;
   onCountryChange: (country: string) => void;
+  feedSnapshot: WildfireFeedSnapshot | null;
+  feedState: FeedLoadStatus;
 }
 
 export default function SidePanel({
   events,
   selectedFire,
   isMinimized,
-  onSelect,
   onClose,
   onToggleMinimized,
   countries,
   selectedCountry,
   onCountryChange,
+  feedSnapshot,
+  feedState,
 }: SidePanelProps) {
   const { t } = useLocale();
   const [isDesktop, setIsDesktop] = useState(false);
@@ -75,10 +77,11 @@ export default function SidePanel({
           ) : (
             <GlobalOverview
               events={events}
-              onSelect={onSelect}
               countries={countries}
               selectedCountry={selectedCountry}
               onCountryChange={onCountryChange}
+              feedSnapshot={feedSnapshot}
+              feedState={feedState}
             />
           ) : null}
         </div>

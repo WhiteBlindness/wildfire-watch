@@ -1,6 +1,6 @@
 "use client";
 
-import { Pause, Play, Rewind } from "lucide-react";
+import { Info, Pause, Play, Rewind } from "lucide-react";
 import { GLOBAL_TIMELINE_HOURS } from "@/lib/wildfire/temporal";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
@@ -33,9 +33,17 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
       </button>
       <div className="min-w-0 flex-1">
         <div className="mb-1.5 flex items-center justify-between gap-3">
-          <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/60">
+          <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/60">
             <Rewind aria-hidden="true" className="h-3.5 w-3.5 text-red-400" />
-            {t.timeline.title}
+            <span className="truncate">{t.timeline.title}</span>
+            <span
+              tabIndex={0}
+              aria-label={t.timeline.methodologyLabel}
+              title={t.timeline.methodologyText}
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-foreground/45 outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+            >
+              <Info aria-hidden="true" className="h-3.5 w-3.5" />
+            </span>
           </span>
           <output className="font-mono text-xs font-semibold tabular-nums text-foreground">{currentLabel}</output>
         </div>

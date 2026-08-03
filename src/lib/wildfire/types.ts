@@ -1,6 +1,6 @@
 // Normalized internal schema. Every data source (mock, NASA FIRMS, EFFIS, local
 // civil protection feeds) must be mapped into this shape before it reaches the UI,
-// so map/panel/chart components never know or care where the data came from.
+// so map/panel components never know or care where the data came from.
 
 export type FireSeverity = "low" | "moderate" | "high" | "extreme";
 export type FireStatus = "active" | "contained" | "extinguished";
@@ -53,26 +53,11 @@ export interface InternationalAid {
   countries: string[];
 }
 
-/** One sample in the fire's time-series evolution (for charts). */
+/** One measured sample in a fire's time-series evolution, when a source provides it. */
 export interface FireEvolutionPoint {
   timestamp: string;
   areaHectares: number;
   personnel: number;
-}
-
-/** One simulated telemetry sample used by the selected-fire dashboard. */
-export interface FireTelemetryPoint {
-  timestamp: string;
-  areaBurned: number;
-  aerialUnits: number;
-  groundUnits: number;
-  frpTrend: number;
-}
-
-export interface FireTelemetry {
-  points: FireTelemetryPoint[];
-  /** Always true until an upstream source provides measured incident telemetry. */
-  simulated: true;
 }
 
 export interface WildfireEvent {
@@ -102,8 +87,6 @@ export interface WildfireEvent {
   forces: DeployedForces | null;
   internationalAid: InternationalAid | null;
   evolution: FireEvolutionPoint[] | null;
-  /** Generated lazily for lightweight FIRMS cache records. */
-  telemetry?: FireTelemetry;
 
   /** Peak Fire Radiative Power (MW) across this cluster's detections — a real
    * physical measurement satellite sources provide. Null for sources (mock)
@@ -116,6 +99,26 @@ export interface WildfireEvent {
   /** Which upstream feed produced this record. */
   source: "mock" | "firms" | "effis" | "civil-protection";
   lastUpdated: string;
+}
+
+export type FeedLoadStatus = "loading" | "ready" | "error";
+export type FeedFreshness = "current" | "stale" | "unavailable";
+
+/**
+ * The unfiltered feed snapshot shown by the app. Keeping this separate from
+ * map/panel filters preserves provenance even when the visible event list is
+ * narrowed to a country or timeline frame.
+ */
+export interface WildfireFeedSnapshot {
+  events: WildfireEvent[];
+  /** Exact upstream identifier, for example NASA FIRMS VIIRS_SNPP_NRT. */
+  sourceId: string;
+  /** Human-readable source name safe to show in the interface. */
+  sourceLabel: string;
+  /** KV Worker generatedAt timestamp, not the browser fetch time. */
+  generatedAt: string | null;
+  freshness?: FeedFreshness;
+  error?: string;
 }
 
 export interface FireWeather {
@@ -148,6 +151,8 @@ export interface FireSelection {
 /** Contract every real/mock data provider must implement. UI code only ever
  * talks to this interface, never to a concrete provider. */
 export interface WildfireDataAdapter {
+  /** Full feed snapshot, including provenance and upstream freshness. */
+  getSnapshot(): Promise<WildfireFeedSnapshot>;
   /** Cheap list for the map: all currently known events. */
   listEvents(): Promise<WildfireEvent[]>;
   /** Full detail for a single event (side panel). May be the same object

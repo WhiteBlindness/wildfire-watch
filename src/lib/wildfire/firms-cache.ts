@@ -55,7 +55,6 @@ export function cachedPointToEvent(point: CachedFirmsPoint, generatedAt: string)
     forces: null,
     internationalAid: null,
     evolution: null,
-    telemetry: undefined,
     maxFrpMw: point.frpMw,
     satelliteDetection: {
       frpMw: point.frpMw,
@@ -70,5 +69,8 @@ export function cachedPointToEvent(point: CachedFirmsPoint, generatedAt: string)
 export function isFirmsCachePayload(value: unknown): value is FirmsCachePayload {
   if (!value || typeof value !== "object") return false;
   const payload = value as Partial<FirmsCachePayload>;
-  return payload.version === 1 && typeof payload.generatedAt === "string" && Array.isArray(payload.points);
+  return payload.version === 1
+    && payload.source === "NASA FIRMS VIIRS_SNPP_NRT"
+    && typeof payload.generatedAt === "string"
+    && Array.isArray(payload.points);
 }

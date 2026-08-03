@@ -1,29 +1,40 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import dynamic from "next/dynamic";
 import TopBar from "@/components/layout/TopBar";
 import Legend from "@/components/map/Legend";
+import MapLoadingState from "@/components/map/MapLoadingState";
 import SidePanel from "@/components/panel/SidePanel";
-import AdSlot from "@/components/ui/AdSlot";
 import { firmsAdapter } from "@/lib/wildfire/firms-adapter";
-import { eventToSelection } from "@/lib/wildfire/selection";
-import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
+import type {
+  FeedLoadStatus,
+  FireSelection,
+  WildfireFeedSnapshot,
+} from "@/lib/wildfire/types";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
 import GlobalTimelineControl from "@/components/map/GlobalTimelineControl";
 import { GLOBAL_TIMELINE_HOURS } from "@/lib/wildfire/temporal";
 
 // MapLibre touches `window` on import, so the map must never render during SSR.
-const FireMap = dynamic(() => import("@/components/map/FireMap"), { ssr: false });
+// The branded fallback also covers the JavaScript chunk-loading window.
+const FireMap = dynamic(() => import("@/components/map/FireMap"), {
+  ssr: false,
+  loading: () => <MapLoadingState announce={false} />,
+});
 
 interface HomeClientProps {
-  events?: WildfireEvent[];
+  feedSnapshot?: WildfireFeedSnapshot;
 }
 
-export default function HomeClient({ events: initialEvents = [] }: HomeClientProps) {
+export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClientProps) {
   const { resolvedTheme } = useTheme();
-  const [events, setEvents] = useState<WildfireEvent[]>(initialEvents);
+  const [feedSnapshot, setFeedSnapshot] = useState<WildfireFeedSnapshot | null>(initialSnapshot ?? null);
+  const [feedState, setFeedState] = useState<FeedLoadStatus>(initialSnapshot ? "ready" : "loading");
+  const events = useMemo(() => feedSnapshot?.events ?? [], [feedSnapshot]);
+  const [feedRetryNonce, setFeedRetryNonce] = useState(0);
+  const [isMapReady, setIsMapReady] = useState(false);
   const [selectedFire, setSelectedFire] = useState<FireSelection | null>(null);
   const [isPanelMinimized, setIsPanelMinimized] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState("global");
@@ -42,17 +53,23 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
   // The page request remains tiny: hotspot data arrives from the Worker KV
   // endpoint after hydration. NASA is only contacted by the hourly ingestor.
   useEffect(() => {
-    if (initialEvents.length > 0) return;
     let cancelled = false;
-    firmsAdapter.listEvents().then((nextEvents) => {
-      if (!cancelled) setEvents(nextEvents);
+
+    firmsAdapter.getSnapshot().then((snapshot) => {
+      if (cancelled) return;
+      setFeedSnapshot(snapshot);
+      setFeedState("ready");
     }).catch((error: unknown) => {
+      if (cancelled) return;
       console.error("Unable to load cached FIRMS hotspots", error);
+      // Preserve any last-known snapshot so the overview can call it out as
+      // stale rather than silently replacing it with an empty state.
+      setFeedState("error");
     });
     return () => {
       cancelled = true;
     };
-  }, [initialEvents]);
+  }, [feedRetryNonce]);
 
   const countries = useMemo(
     () => [...new Set(events
@@ -68,12 +85,11 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
     [events, selectedCountry],
   );
   const mapTheme = resolvedTheme === "light" ? "light" : "dark";
+  const isInitialLoading = !isMapReady || (feedState === "loading" && !feedSnapshot);
 
-  function handleSelect(id: string | null): void {
-    const event = id ? filteredEvents.find((candidate) => candidate.id === id) : null;
-    setSelectedFire(event ? eventToSelection(event) : null);
-    if (event) setIsPanelMinimized(false);
-  }
+  const handleMapLoad = useCallback(() => {
+    setIsMapReady(true);
+  }, []);
 
   function handleMapSelect(selection: FireSelection | null): void {
     setSelectedFire(selection);
@@ -86,30 +102,36 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
     setIsPanelMinimized(false);
   }
 
-  return (
-    <main className="relative h-dvh w-full overflow-hidden">
-      {/* h-dvh (dynamic viewport height), not h-full/h-screen: iOS Safari's
-          collapsing/expanding address bar resizes the *visual* viewport, and
-          a height chain built on percentages anchored to the *layout*
-          viewport (html/body height:100%) can end up 0/mis-sized there. dvh
-          is viewport-relative on its own, so this wrapper no longer depends
-          on that ancestor chain at all.
+  function handleFeedRetry(): void {
+    setFeedState("loading");
+    setFeedRetryNonce((value) => value + 1);
+  }
 
-          The map sits in its own absolutely-positioned layer rather than
-          growing from flex/percentage rules, so its size never depends on
-          sibling layout, and it owns the bottom of the stacking order. */}
-      <div className="absolute inset-0 z-0">
+  return (
+    <main
+      className="wildfire-watch relative h-dvh w-full overflow-hidden"
+      data-map-panel-open={selectedFire || !isPanelMinimized ? "true" : "false"}
+    >
+      {/* Keep MapLibre mounted under the branded lifecycle layer so it can
+          measure the viewport and finish style work while data is pending. */}
+      <div className={`wildfire-watch-map absolute inset-0 z-0 transition-opacity duration-[400ms] motion-reduce:duration-0 ${isInitialLoading ? "opacity-0" : "opacity-100"}`}>
         <FireMap
           events={filteredEvents}
           perimeterEvents={events}
           selectedFire={selectedFire}
           onSelect={handleMapSelect}
+          onMapLoad={handleMapLoad}
           theme={mapTheme}
           basemapMode={basemapMode}
           countryScope={selectedCountry}
           timelineHour={timelineHour}
         />
       </div>
+
+      {isInitialLoading && <MapLoadingState />}
+      {!isInitialLoading && feedState === "error" && (
+        <MapLoadingState mode="error" onRetry={handleFeedRetry} />
+      )}
 
       <TopBar basemapMode={basemapMode} onBasemapChange={setBasemapMode} />
 
@@ -125,26 +147,21 @@ export default function HomeClient({ events: initialEvents = [] }: HomeClientPro
         />
       </div>
 
-      {/* The side panel is permanently docked now (Global Overview when
-          nothing is selected) — desktop only, and kept clear of its 400px
-          reserved width so it never renders underneath it. */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 hidden items-end justify-between gap-3 p-4 md:right-[416px] md:flex">
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 hidden items-end justify-start p-4 md:right-[416px] md:flex">
         <Legend />
-        <div className="pointer-events-auto shrink-0">
-          <AdSlot variant="sidebar-banner" />
-        </div>
       </div>
 
       <SidePanel
         events={filteredEvents}
         selectedFire={selectedFire}
         isMinimized={isPanelMinimized}
-        onSelect={(id) => handleSelect(id)}
-        onClose={() => handleSelect(null)}
+        onClose={() => handleMapSelect(null)}
         onToggleMinimized={() => setIsPanelMinimized((current) => !current)}
         countries={countries}
         selectedCountry={selectedCountry}
         onCountryChange={handleCountryChange}
+        feedSnapshot={feedSnapshot}
+        feedState={feedState}
       />
     </main>
   );

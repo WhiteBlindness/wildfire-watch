@@ -1,10 +1,10 @@
 import { cachedPointToEvent, isFirmsCachePayload } from "./firms-cache";
-import type { WildfireDataAdapter, WildfireEvent } from "./types";
+import type { WildfireDataAdapter, WildfireEvent, WildfireFeedSnapshot } from "./types";
 
-let cachedEvents: WildfireEvent[] | null = null;
+let cachedSnapshot: WildfireFeedSnapshot | null = null;
 
-async function fetchCachedEvents(): Promise<WildfireEvent[]> {
-  if (cachedEvents) return cachedEvents;
+async function fetchCachedSnapshot(): Promise<WildfireFeedSnapshot> {
+  if (cachedSnapshot) return cachedSnapshot;
 
   const response = await fetch("/api/fires", { cache: "no-store" });
   if (!response.ok) throw new Error(`Fire cache request failed: ${response.status}`);
@@ -12,16 +12,24 @@ async function fetchCachedEvents(): Promise<WildfireEvent[]> {
   const payload: unknown = await response.json();
   if (!isFirmsCachePayload(payload)) throw new Error("Fire cache returned an invalid payload");
 
-  cachedEvents = payload.points.map((point) => cachedPointToEvent(point, payload.generatedAt));
-  return cachedEvents;
+  cachedSnapshot = {
+    events: payload.points.map((point) => cachedPointToEvent(point, payload.generatedAt)),
+    sourceId: payload.source,
+    sourceLabel: "NASA FIRMS Satellite Telemetry",
+    generatedAt: payload.generatedAt,
+  };
+  return cachedSnapshot;
 }
 
 /** The app adapter reads only the Worker KV endpoint; NASA is never contacted
  * from the browser or from a page request. */
 export const firmsAdapter: WildfireDataAdapter = {
-  listEvents: fetchCachedEvents,
+  getSnapshot: fetchCachedSnapshot,
+  async listEvents(): Promise<WildfireEvent[]> {
+    return (await fetchCachedSnapshot()).events;
+  },
   async getEvent(id: string): Promise<WildfireEvent | null> {
-    const events = await fetchCachedEvents();
-    return events.find((event) => event.id === id) ?? null;
+    const snapshot = await fetchCachedSnapshot();
+    return snapshot.events.find((event) => event.id === id) ?? null;
   },
 };
