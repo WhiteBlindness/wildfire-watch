@@ -49,6 +49,8 @@ const en = {
     sliderLabel: "FIRMS detection timeline",
     playLabel: "Play global fire timeline",
     pauseLabel: "Pause global fire timeline",
+    minimizeLabel: "Minimize fire timeline",
+    expandLabel: "Expand fire timeline",
     methodologyLabel: "FIRMS chronology methodology",
     methodologyText: "Shows only detections acquired by the selected time. Every point uses the date and time measured by the FIRMS satellite.",
     now: "Now",

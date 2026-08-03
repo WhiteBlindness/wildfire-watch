@@ -137,7 +137,7 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
 
       <TopBar basemapMode={basemapMode} onBasemapChange={setBasemapMode} />
 
-      <div className={`pointer-events-none fixed inset-x-0 z-40 flex justify-center px-3 md:right-[416px] md:left-0 md:bottom-4 ${selectedFire ? "bottom-[calc(75vh+0.75rem)]" : "bottom-[5rem]"}`}>
+      <div className="pointer-events-none fixed inset-x-0 top-[4.75rem] z-30 flex justify-center px-3 md:top-20 md:right-[416px] md:left-0">
         <GlobalTimelineControl
           value={timelineHour}
           isPlaying={isTimelinePlaying}

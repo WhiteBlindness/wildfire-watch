@@ -49,6 +49,8 @@ const pt: Dictionary = {
     sliderLabel: "Linha temporal das deteções FIRMS",
     playLabel: "Reproduzir linha temporal global de incêndios",
     pauseLabel: "Pausar linha temporal global de incêndios",
+    minimizeLabel: "Minimizar linha temporal de incêndios",
+    expandLabel: "Expandir linha temporal de incêndios",
     methodologyLabel: "Metodologia da cronologia FIRMS",
     methodologyText: "Mostra apenas deteções adquiridas até à hora selecionada. Cada ponto usa a data e hora medidas pelo satélite FIRMS.",
     now: "Agora",
