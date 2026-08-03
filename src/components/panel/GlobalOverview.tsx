@@ -100,7 +100,7 @@ export default function GlobalOverview({
           </div>
         </dl>
         {freshness === "stale" && (
-          <p className="mt-3 text-xs leading-5 text-amber-200/85">{t.overview.staleLastKnown}</p>
+          <p className="mt-3 text-xs leading-5 text-amber-700/90 dark:text-amber-200/85">{t.overview.staleLastKnown}</p>
         )}
       </section>
 
@@ -175,9 +175,9 @@ function FreshnessBadge({ freshness, labels }: { freshness: FeedFreshness | "loa
         ? labels.freshnessStale
         : labels.freshnessUnavailable;
   const tone = freshness === "stale"
-    ? "text-amber-200"
+    ? "text-amber-700 dark:text-amber-200"
     : freshness === "unavailable"
-      ? "text-red-200"
+      ? "text-red-700 dark:text-red-200"
       : "text-foreground/70";
 
   return (

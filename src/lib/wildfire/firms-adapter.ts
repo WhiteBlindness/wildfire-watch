@@ -1,4 +1,4 @@
-import { cachedPointToEvent, isFirmsCachePayload } from "./firms-cache";
+import { cachedPointToEvent, isGlobalFirmsCachePayload } from "./firms-cache";
 import type { WildfireDataAdapter, WildfireEvent, WildfireFeedSnapshot } from "./types";
 
 let cachedSnapshot: WildfireFeedSnapshot | null = null;
@@ -10,7 +10,9 @@ async function fetchCachedSnapshot(): Promise<WildfireFeedSnapshot> {
   if (!response.ok) throw new Error(`Fire cache request failed: ${response.status}`);
 
   const payload: unknown = await response.json();
-  if (!isFirmsCachePayload(payload)) throw new Error("Fire cache returned an invalid payload");
+  if (!isGlobalFirmsCachePayload(payload)) {
+    throw new Error("Fire cache returned an invalid or incomplete worldwide payload");
+  }
 
   cachedSnapshot = {
     events: payload.points.map((point) => cachedPointToEvent(point, payload.generatedAt)),

@@ -236,37 +236,37 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
   const tone = {
     good: {
       surface: "bg-emerald-500/10 ring-emerald-400/30",
-      text: "text-emerald-300",
+      text: "text-emerald-700 dark:text-emerald-300",
       dot: "bg-emerald-400",
       label: t.fireDetail.airQualityGood,
     },
     moderate: {
       surface: "bg-amber-500/10 ring-amber-400/30",
-      text: "text-amber-300",
+      text: "text-amber-700 dark:text-amber-300",
       dot: "bg-amber-400",
       label: t.fireDetail.airQualityModerate,
     },
     "unhealthy-sensitive": {
       surface: "bg-orange-500/10 ring-orange-400/30",
-      text: "text-orange-300",
+      text: "text-orange-700 dark:text-orange-300",
       dot: "bg-orange-400",
       label: t.fireDetail.airQualitySensitive,
     },
     unhealthy: {
       surface: "bg-red-500/10 ring-red-400/30",
-      text: "text-red-300",
+      text: "text-red-700 dark:text-red-300",
       dot: "bg-red-400",
       label: t.fireDetail.airQualityUnhealthy,
     },
     "very-unhealthy": {
-      surface: "bg-red-950/45 ring-red-500/45",
-      text: "text-red-200",
+      surface: "bg-red-100/80 ring-red-500/45 dark:bg-red-950/45",
+      text: "text-red-800 dark:text-red-200",
       dot: "bg-red-500",
       label: t.fireDetail.airQualityVeryUnhealthy,
     },
     hazardous: {
-      surface: "bg-rose-950/60 ring-rose-400/55",
-      text: "text-rose-100",
+      surface: "bg-rose-100/80 ring-rose-400/55 dark:bg-rose-950/60",
+      text: "text-rose-800 dark:text-rose-100",
       dot: "bg-rose-400",
       label: t.fireDetail.airQualityHazardous,
     },
@@ -284,7 +284,7 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
           {tone.label}
         </span>
       </div>
-      <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-white/10 pt-3 text-xs">
+      <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-neutral-200 pt-3 text-xs dark:border-neutral-800">
         <div>
           <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/45">PM2.5</dt>
           <dd className="mt-1 font-mono font-semibold tabular-nums text-foreground">{reading.pm25.toFixed(1)} {reading.unit}</dd>

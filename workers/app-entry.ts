@@ -20,7 +20,9 @@ const appWorker = {
   },
 
   scheduled(_controller: unknown, env: AppEnv, ctx: WorkerExecutionContext): void {
-    ctx.waitUntil(refreshFirmsCache(env));
+    ctx.waitUntil(refreshFirmsCache(env).catch((error: unknown) => {
+      console.error("FIRMS scheduled refresh failed; existing KV snapshot was preserved", error);
+    }));
   },
 };
 

@@ -1,6 +1,8 @@
 import type { WildfireEvent } from "./types";
 
 export const GLOBAL_TIMELINE_HOURS = 72;
+/** Slider position used for the initial global snapshot: 100% / NOW. */
+export const GLOBAL_TIMELINE_NOW = GLOBAL_TIMELINE_HOURS;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -42,6 +44,7 @@ export function eventsToTemporalMarkerGeoJSON(
   timelineHour: number,
 ): GeoJSON.FeatureCollection {
   const frameHour = clamp(timelineHour, 0, GLOBAL_TIMELINE_HOURS);
+  const isNow = frameHour === GLOBAL_TIMELINE_HOURS;
   const newestDetection = events.reduce((latest, event) => Math.max(latest, detectionTime(event)), 0) || Date.now();
   const frameMs = newestDetection - ((GLOBAL_TIMELINE_HOURS - frameHour) * 3_600_000);
 
@@ -50,7 +53,10 @@ export function eventsToTemporalMarkerGeoJSON(
     features: events.flatMap<GeoJSON.Feature>((event) => {
       const observedAt = detectionTime(event);
       const historyMs = inferredHistoryHours(event) * 3_600_000;
-      const progress = clamp((frameMs - (observedAt - historyMs)) / historyMs, 0, 1);
+      // The right edge is the live snapshot, so every validated FIRMS point
+      // must remain visible. Lifecycle reconstruction only filters historical
+      // frames where the user has explicitly moved the slider backwards.
+      const progress = isNow ? 1 : clamp((frameMs - (observedAt - historyMs)) / historyMs, 0, 1);
       if (progress < 0.025) return [];
 
       const growth = 1 - Math.exp(-3.2 * progress);

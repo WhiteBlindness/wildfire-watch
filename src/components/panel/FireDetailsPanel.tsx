@@ -176,7 +176,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
       </dl>
 
       <div className="rounded-xl bg-red-500/8 p-3.5 ring-1 ring-inset ring-red-500/25">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-300/80">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-700/80 dark:text-red-300/80">
             {t.fireDetail.satelliteTelemetryTitle}
           </h3>
           <dl className="grid grid-cols-2 gap-3 text-sm">

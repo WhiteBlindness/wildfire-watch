@@ -1,8 +1,15 @@
-import { FIRMS_CACHE_KEY, type CachedFirmsPoint, type FirmsCachePayload } from "../src/lib/wildfire/firms-cache";
+import {
+  FIRMS_CACHE_KEY,
+  isGlobalFirmsCachePayload,
+  type CachedFirmsPoint,
+  type FirmsCachePayload,
+} from "../src/lib/wildfire/firms-cache";
 
 const FIRMS_BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv";
 const FIRMS_SOURCE = "VIIRS_SNPP_NRT";
-const FIRMS_DAY_RANGE = 1;
+const FIRMS_DAY_RANGE = 3;
+const FIRMS_AREA = "world";
+const FIRMS_TIMESTAMP_FUTURE_TOLERANCE_MS = 6 * 60 * 60 * 1000;
 const MAX_POINTS = 6_000;
 const PRIORITY_POINTS = 1_500;
 const GRID_CELL_DEGREES = 2;
@@ -35,11 +42,36 @@ function parseConfidence(raw: string): number {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function toTimestamp(date: string, time: string): string | null {
-  if (!date) return null;
+export function toTimestamp(date: string, time: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) return null;
   const hhmm = time.trim().padStart(4, "0");
-  const parsed = new Date(`${date}T${hhmm.slice(0, 2)}:${hhmm.slice(2, 4)}:00Z`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  if (!/^\d{4}$/.test(hhmm)) return null;
+
+  const [year, month, day] = date.trim().split("-").map(Number);
+  const hours = Number(hhmm.slice(0, 2));
+  const minutes = Number(hhmm.slice(2, 4));
+  if (hours > 23 || minutes > 59) return null;
+
+  const timestamp = Date.UTC(year, month - 1, day, hours, minutes);
+  const parsed = new Date(timestamp);
+  // Date.UTC normalizes impossible dates (for example, 31 February), so
+  // compare the UTC components back to the source fields before accepting it.
+  if (parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+    || timestamp > Date.now() + FIRMS_TIMESTAMP_FUTURE_TOLERANCE_MS) {
+    return null;
+  }
+  return parsed.toISOString();
+}
+
+/**
+ * Omit FIRMS' optional DATE segment. The API then selects the most recent
+ * available NRT snapshot; deriving "today" in local time can request a
+ * future GMT date around midnight. `world` is deliberately unrestricted.
+ */
+export function buildFirmsWorldUrl(mapKey: string): string {
+  return `${FIRMS_BASE_URL}/${encodeURIComponent(mapKey.trim())}/${FIRMS_SOURCE}/${FIRMS_AREA}/${FIRMS_DAY_RANGE}`;
 }
 
 export function parseCsv(csv: string): { sourceRows: number; rows: ParsedRow[] } {
@@ -153,17 +185,15 @@ export function selectPoints(rows: ParsedRow[]): CachedFirmsPoint[] {
 }
 
 export async function refreshFirmsCache(env: FirmsIngestEnv): Promise<FirmsCachePayload> {
-  if (!env.FIRMS_MAP_KEY) throw new Error("FIRMS_MAP_KEY is not configured");
+  if (!env.FIRMS_MAP_KEY?.trim()) throw new Error("FIRMS_MAP_KEY is not configured");
   const response = await fetch(
-    `${FIRMS_BASE_URL}/${env.FIRMS_MAP_KEY}/${FIRMS_SOURCE}/world/${FIRMS_DAY_RANGE}`,
-    { headers: { Accept: "text/csv" } },
+    buildFirmsWorldUrl(env.FIRMS_MAP_KEY),
+    { cache: "no-store", headers: { Accept: "text/csv" } },
   );
   if (!response.ok) throw new Error(`NASA FIRMS request failed: ${response.status}`);
 
   const parsed = parseCsv(await response.text());
   const points = selectPoints(parsed.rows);
-  if (points.length === 0) throw new Error("NASA FIRMS returned no qualifying hotspots");
-
   const payload: FirmsCachePayload = {
     version: 1,
     source: "NASA FIRMS VIIRS_SNPP_NRT",
@@ -172,6 +202,12 @@ export async function refreshFirmsCache(env: FirmsIngestEnv): Promise<FirmsCache
     filteredRows: parsed.rows.length,
     points,
   };
+  if (!isGlobalFirmsCachePayload(payload)) {
+    throw new Error(`NASA FIRMS returned an incomplete worldwide feed (${points.length} points)`);
+  }
+
+  // Deliberately omit a KV TTL. A failed NASA refresh must not erase the
+  // last known-good worldwide snapshot; freshness is communicated separately.
   await env.FIRMS_CACHE.put(FIRMS_CACHE_KEY, JSON.stringify(payload));
   console.log("FIRMS cache refreshed", {
     generatedAt: payload.generatedAt,

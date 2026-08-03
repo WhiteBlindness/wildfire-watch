@@ -2,6 +2,12 @@ import { lookupPlace } from "./geo-lookup";
 import type { FireSeverity, WildfireEvent } from "./types";
 
 export const FIRMS_CACHE_KEY = "active-fires:v1";
+/**
+ * A worldwide VIIRS NRT response normally contains tens of thousands of
+ * rows. Keep a country-sized or fixture-sized response from replacing the
+ * last good global snapshot in KV.
+ */
+export const FIRMS_MIN_GLOBAL_POINTS = 1_000;
 
 export interface CachedFirmsPoint {
   id: string;
@@ -72,5 +78,40 @@ export function isFirmsCachePayload(value: unknown): value is FirmsCachePayload 
   return payload.version === 1
     && payload.source === "NASA FIRMS VIIRS_SNPP_NRT"
     && typeof payload.generatedAt === "string"
-    && Array.isArray(payload.points);
+    && Number.isInteger(payload.sourceRows)
+    && Number.isInteger(payload.filteredRows)
+    && Array.isArray(payload.points)
+    && payload.points.every((point) => {
+      if (!point || typeof point !== "object") return false;
+      const candidate = point as Partial<CachedFirmsPoint>;
+      const { lat, lng, frpMw, confidencePct } = candidate;
+      return typeof candidate.id === "string"
+        && typeof lat === "number"
+        && Number.isFinite(lat)
+        && lat >= -90
+        && lat <= 90
+        && typeof lng === "number"
+        && Number.isFinite(lng)
+        && lng >= -180
+        && lng <= 180
+        && typeof frpMw === "number"
+        && Number.isFinite(frpMw)
+        && frpMw > 0
+        && typeof confidencePct === "number"
+        && Number.isFinite(confidencePct)
+        && confidencePct >= 0
+        && confidencePct <= 100
+        && typeof candidate.detectedAt === "string"
+        && Number.isFinite(Date.parse(candidate.detectedAt));
+    });
+}
+
+/** Validate the invariants required before a payload is exposed as global data. */
+export function isGlobalFirmsCachePayload(value: unknown): value is FirmsCachePayload {
+  if (!isFirmsCachePayload(value)) return false;
+  if (value.points.length < FIRMS_MIN_GLOBAL_POINTS) return false;
+
+  const longitudeBands = new Set(value.points.map((point) => Math.floor((point.lng + 180) / 30)));
+  const latitudeBands = new Set(value.points.map((point) => Math.floor((point.lat + 90) / 30)));
+  return longitudeBands.size >= 8 && latitudeBands.size >= 4;
 }

@@ -15,7 +15,7 @@ import type {
 } from "@/lib/wildfire/types";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
 import GlobalTimelineControl from "@/components/map/GlobalTimelineControl";
-import { GLOBAL_TIMELINE_HOURS } from "@/lib/wildfire/temporal";
+import { GLOBAL_TIMELINE_HOURS, GLOBAL_TIMELINE_NOW } from "@/lib/wildfire/temporal";
 
 // MapLibre touches `window` on import, so the map must never render during SSR.
 // The branded fallback also covers the JavaScript chunk-loading window.
@@ -39,7 +39,9 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
   const [isPanelMinimized, setIsPanelMinimized] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState("global");
   const [basemapMode, setBasemapMode] = useState<BasemapMode>("satellite");
-  const [timelineHour, setTimelineHour] = useState(GLOBAL_TIMELINE_HOURS);
+  // Start at the right edge of the slider so every currently active global
+  // hotspot is visible before the visitor opts into historical playback.
+  const [timelineHour, setTimelineHour] = useState(GLOBAL_TIMELINE_NOW);
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
 
   useEffect(() => {
@@ -135,7 +137,7 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
 
       <TopBar basemapMode={basemapMode} onBasemapChange={setBasemapMode} />
 
-      <div className={`pointer-events-none fixed inset-x-0 z-30 flex justify-center px-3 md:right-[416px] md:left-0 md:bottom-4 ${selectedFire ? "bottom-[calc(75vh+0.75rem)]" : "bottom-[4.75rem]"}`}>
+      <div className={`pointer-events-none fixed inset-x-0 z-10 flex justify-center px-3 md:right-[416px] md:left-0 md:bottom-4 md:z-30 ${selectedFire ? "bottom-[calc(75vh+0.75rem)]" : "bottom-[4.75rem]"}`}>
         <GlobalTimelineControl
           value={timelineHour}
           isPlaying={isTimelinePlaying}
