@@ -200,6 +200,15 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
 
   const eventById = useMemo(() => new globalThis.Map(events.map((event) => [event.id, event])), [events]);
 
+  // Updating the raw source data, rather than filtering rendered cluster
+  // layers, makes MapLibre rebuild native clusters and point counts for the
+  // selected acquisition-time window.
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    const source = map?.getSource(MARKER_SOURCE_ID) as GeoJSONSource | undefined;
+    source?.setData(markerData);
+  }, [markerData]);
+
   const handleClick = useCallback(
     async (e: MapLayerMouseEvent) => {
       const requestId = ++selectionRequestRef.current;

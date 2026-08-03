@@ -45,12 +45,12 @@ const pt: Dictionary = {
   },
   timeline: {
     controlLabel: "Linha temporal global de incêndios",
-    title: "Reconstrução FIRMS simulada",
-    sliderLabel: "Linha temporal da reconstrução histórica de incêndios",
+    title: "Cronologia FIRMS observada",
+    sliderLabel: "Linha temporal das deteções FIRMS",
     playLabel: "Reproduzir linha temporal global de incêndios",
     pauseLabel: "Pausar linha temporal global de incêndios",
-    methodologyLabel: "Metodologia da reconstrução FIRMS simulada",
-    methodologyText: "Reconstrução visual determinística a partir da hora da deteção e da potência radiativa. O FIRMS fornece instantâneos, não histórico medido do incêndio.",
+    methodologyLabel: "Metodologia da cronologia FIRMS",
+    methodologyText: "Mostra apenas deteções adquiridas até à hora selecionada. Cada ponto usa a data e hora medidas pelo satélite FIRMS.",
     now: "Agora",
   },
   status: {

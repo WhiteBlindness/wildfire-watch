@@ -8,58 +8,49 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function stableOffset(seed: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash ^= seed.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) % 13;
-}
-
-function detectionTime(event: WildfireEvent): number {
+function detectionTime(event: WildfireEvent): number | null {
   const detectedAt = event.satelliteDetection?.detectedAt ?? event.lastUpdated;
   const parsed = Date.parse(detectedAt);
-  return Number.isFinite(parsed) ? parsed : Date.now();
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function inferredHistoryHours(event: WildfireEvent): number {
-  const frpMw = event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 0;
-  const severityHours = {
-    low: 24,
-    moderate: 36,
-    high: 52,
-    extreme: 64,
-  }[event.severity];
-  return clamp(severityHours + stableOffset(event.id) + Math.round(Math.log1p(frpMw) * 1.5), 18, GLOBAL_TIMELINE_HOURS);
+function latestDetectionTime(events: WildfireEvent[]): number | null {
+  let latest: number | null = null;
+  for (const event of events) {
+    const timestamp = detectionTime(event);
+    if (timestamp !== null && (latest === null || timestamp > latest)) latest = timestamp;
+  }
+  return latest;
 }
 
 /**
- * Produces a transparent, deterministic reconstruction for the global map.
- * FIRMS supplies snapshots rather than measured incident history, so the
- * slider deliberately scales FRP and presence using a seeded life-cycle.
+ * Maps the 0-72 slider range onto the acquisition window. `null` means NOW,
+ * where the complete validated snapshot is shown without an upper bound.
+ */
+export function timelineCutoffTimestamp(events: WildfireEvent[], timelineHour: number): number | null {
+  const frameHour = clamp(timelineHour, 0, GLOBAL_TIMELINE_HOURS);
+  if (frameHour === GLOBAL_TIMELINE_NOW) return null;
+  const latest = latestDetectionTime(events);
+  return latest === null ? null : latest - ((GLOBAL_TIMELINE_HOURS - frameHour) * 3_600_000);
+}
+
+/**
+ * Filters the FIRMS snapshot by measured satellite acquisition time. Passing
+ * the resulting collection to the clustered source forces MapLibre to rebuild
+ * clusters and counts from only the detections visible at this frame.
  */
 export function eventsToTemporalMarkerGeoJSON(
   events: WildfireEvent[],
   timelineHour: number,
 ): GeoJSON.FeatureCollection {
-  const frameHour = clamp(timelineHour, 0, GLOBAL_TIMELINE_HOURS);
-  const isNow = frameHour === GLOBAL_TIMELINE_HOURS;
-  const newestDetection = events.reduce((latest, event) => Math.max(latest, detectionTime(event)), 0) || Date.now();
-  const frameMs = newestDetection - ((GLOBAL_TIMELINE_HOURS - frameHour) * 3_600_000);
+  const cutoffTimestamp = timelineCutoffTimestamp(events, timelineHour);
 
   return {
     type: "FeatureCollection",
     features: events.flatMap<GeoJSON.Feature>((event) => {
-      const observedAt = detectionTime(event);
-      const historyMs = inferredHistoryHours(event) * 3_600_000;
-      // The right edge is the live snapshot, so every validated FIRMS point
-      // must remain visible. Lifecycle reconstruction only filters historical
-      // frames where the user has explicitly moved the slider backwards.
-      const progress = isNow ? 1 : clamp((frameMs - (observedAt - historyMs)) / historyMs, 0, 1);
-      if (progress < 0.025) return [];
+      const timestamp = detectionTime(event);
+      if (timestamp === null || (cutoffTimestamp !== null && timestamp > cutoffTimestamp)) return [];
 
-      const growth = 1 - Math.exp(-3.2 * progress);
       const frpMw = event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 0;
       return [{
         type: "Feature",
@@ -69,10 +60,10 @@ export function eventsToTemporalMarkerGeoJSON(
           severity: event.severity,
           name: event.name,
           frpMw,
-          temporalFrpMw: Math.max(0.1, frpMw * (0.12 + (growth * 0.88))),
-          temporalRadiusScale: 0.38 + (growth * 0.62),
-          temporalOpacity: 0.2 + (growth * 0.8),
-          timelineProgress: progress,
+          temporalFrpMw: Math.max(0.1, frpMw),
+          temporalRadiusScale: 1,
+          temporalOpacity: 1,
+          timestamp,
           confidencePct: event.satelliteDetection?.confidencePct ?? 0,
           detectedAt: event.satelliteDetection?.detectedAt ?? event.lastUpdated,
         },

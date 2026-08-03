@@ -45,12 +45,12 @@ const en = {
   },
   timeline: {
     controlLabel: "Global fire timeline",
-    title: "Simulated FIRMS reconstruction",
-    sliderLabel: "Historical fire reconstruction timeline",
+    title: "Observed FIRMS chronology",
+    sliderLabel: "FIRMS detection timeline",
     playLabel: "Play global fire timeline",
     pauseLabel: "Pause global fire timeline",
-    methodologyLabel: "Simulated FIRMS reconstruction methodology",
-    methodologyText: "A deterministic visual reconstruction based on detection time and radiative power. FIRMS provides snapshots, not measured incident history.",
+    methodologyLabel: "FIRMS chronology methodology",
+    methodologyText: "Shows only detections acquired by the selected time. Every point uses the date and time measured by the FIRMS satellite.",
     now: "Now",
   },
   status: {
