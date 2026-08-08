@@ -5,10 +5,12 @@ import {
   buildGoogleNewsQuery,
   decodeXml,
   filterRssArticles,
+  getEffectiveNewsCutoff,
   parseRssArticles,
 } from "./rss";
 
-const CUTOFF = "2026-08-01T12:00:00.000Z";
+const STARTED_AT = "2026-08-01T12:00:00.000Z";
+const EFFECTIVE_CUTOFF = "2026-07-30T12:00:00.000Z";
 
 function item({
   title,
@@ -24,18 +26,19 @@ function item({
   return `<item><title><![CDATA[${title}]]></title><link>${link}</link><description>${description}</description><pubDate>${publishedAt}</pubDate></item>`;
 }
 
-test("keeps the exact acquisition boundary and rejects invalid RSS fields", () => {
+test("relaxes the acquisition cutoff by 48 hours and rejects invalid RSS fields", () => {
   const xml = `<rss><channel>
-    ${item({ title: "Old fire", link: "https://example.com/old", publishedAt: "2026-08-01T11:59:59.000Z" })}
-    ${item({ title: "Boundary fire", link: "https://example.com/boundary", publishedAt: CUTOFF })}
-    ${item({ title: "Later fire", link: "https://example.com/later", publishedAt: "2026-08-02T00:00:00.000Z" })}
+    ${item({ title: "Too old fire", link: "https://example.com/old", publishedAt: "2026-07-30T11:59:59.000Z" })}
+    ${item({ title: "Boundary fire", link: "https://example.com/boundary", publishedAt: EFFECTIVE_CUTOFF })}
+    ${item({ title: "Started fire", link: "https://example.com/started", publishedAt: STARTED_AT })}
     ${item({ title: "Invalid link", link: "javascript:alert(1)", publishedAt: "2026-08-02T01:00:00.000Z" })}
     ${item({ title: "Invalid date", link: "https://example.com/date", publishedAt: "not a date" })}
   </channel></rss>`;
 
+  assert.equal(getEffectiveNewsCutoff(STARTED_AT), EFFECTIVE_CUTOFF);
   assert.deepEqual(
-    parseRssArticles(xml, { publishedAfter: CUTOFF, requireFireKeyword: true }).map((article) => article.link),
-    ["https://example.com/later", "https://example.com/boundary"],
+    parseRssArticles(xml, { publishedAfter: getEffectiveNewsCutoff(STARTED_AT)!, requireFireKeyword: true }).map((article) => article.link),
+    ["https://example.com/started", "https://example.com/boundary"],
   );
 });
 
@@ -49,35 +52,35 @@ test("deduplicates, sorts newest, and limits only after filtering", () => {
   </channel></rss>`;
 
   assert.deepEqual(
-    parseRssArticles(xml, { publishedAfter: CUTOFF, limit: 3 }).map((article) => article.link),
+    parseRssArticles(xml, { publishedAfter: EFFECTIVE_CUTOFF, limit: 3 }).map((article) => article.link),
     ["https://example.com/1", "https://example.com/2", "https://example.com/4"],
   );
 });
 
 test("requires a fire keyword across title or description when requested", () => {
   const articles = filterRssArticles([
-    { title: "Local bulletin", description: "A wildfire is burning nearby", link: "https://example.com/1", publishedAt: CUTOFF },
-    { title: "Local football", description: "Match report", link: "https://example.com/2", publishedAt: CUTOFF },
-  ], { publishedAfter: CUTOFF, requireFireKeyword: true });
+    { title: "Local bulletin", description: "A wildfire is burning nearby", link: "https://example.com/1", publishedAt: EFFECTIVE_CUTOFF },
+    { title: "Local football", description: "Match report", link: "https://example.com/2", publishedAt: EFFECTIVE_CUTOFF },
+    { title: "Incêndios florestais na Europa", link: "https://example.com/3", publishedAt: EFFECTIVE_CUTOFF },
+  ], { publishedAfter: EFFECTIVE_CUTOFF, requireFireKeyword: true });
 
-  assert.deepEqual(articles.map((article) => article.link), ["https://example.com/1"]);
+  assert.deepEqual(articles.map((article) => article.link), ["https://example.com/1", "https://example.com/3"]);
 });
 
-test("builds equivalent Google and Bing queries with unique escaped geography and cutoff", () => {
+test("builds equivalent scoped Google and Bing queries with a relaxed cutoff", () => {
   const input = {
-    location: 'São "João"',
-    region: 'São "João"',
+    location: "Covilhã/Castelo Branco, Portugal",
+    region: "Covilhã",
     country: "Portugal",
-    publishedAfter: CUTOFF,
+    startedAt: STARTED_AT,
   };
   const google = buildGoogleNewsQuery(input);
   const bing = buildBingNewsQuery(input);
 
-  assert.ok(google.includes('("wildfire" OR "fire" OR "incêndio")'));
-  assert.ok(google.includes('"São \\"João\\""'));
-  assert.equal((google.match(/"São \\"João\\""/g) ?? []).length, 1);
-  assert.ok(google.includes('"Portugal"'));
-  assert.ok(google.includes("after:2026-08-01"));
+  assert.ok(google.includes("(wildfire OR fire OR incêndio)"));
+  assert.equal(google, '(wildfire OR fire OR incêndio) "Covilhã" after:2026-07-30');
+  assert.ok(!google.includes("Castelo Branco"));
+  assert.ok(!google.includes('"Portugal"'));
   assert.equal(bing, google);
 });
 

@@ -12,7 +12,7 @@ interface FireTelemetryDashboardProps {
   locationName: string | null;
   region: string;
   country: string;
-  publishedAfter: string;
+  startedAt: string;
   selectionId: string;
   weatherFailed: boolean;
 }
@@ -50,7 +50,7 @@ interface AirQualityResponse {
   availability?: "available" | "no-nearby-monitor" | "unconfigured" | "upstream-error";
 }
 
-export default function FireTelemetryDashboard({ coordinates, weather, weatherFailed, locationName, region, country, publishedAfter, selectionId }: FireTelemetryDashboardProps) {
+export default function FireTelemetryDashboard({ coordinates, weather, weatherFailed, locationName, region, country, startedAt, selectionId }: FireTelemetryDashboardProps) {
   const { locale, t } = useLocale();
   const [newsResult, setNewsResult] = useState<NewsResult | null>(null);
   const [isFetchingAQI, setIsFetchingAQI] = useState(true);
@@ -58,7 +58,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
   const [aqiError, setAqiError] = useState<AqiError | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const [airQualityRetryNonce, setAirQualityRetryNonce] = useState(0);
-  const requestKey = `${selectionId}:${locale}:${locationName ?? "pending"}:${region}:${country}:${publishedAfter}:${retryNonce}`;
+  const requestKey = `${selectionId}:${locale}:${locationName ?? "pending"}:${region}:${country}:${startedAt}:${retryNonce}`;
   const hasCurrentResult = newsResult?.key === requestKey;
   const articles = hasCurrentResult ? newsResult.articles : [];
   const newsFailed = hasCurrentResult ? newsResult.failed : false;
@@ -72,7 +72,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
       location: locationName,
       region,
       country,
-      publishedAfter,
+      startedAt,
       locale,
     });
 
@@ -93,7 +93,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
       });
 
     return () => controller.abort();
-  }, [country, locale, locationName, publishedAfter, region, requestKey]);
+  }, [country, locale, locationName, region, requestKey, startedAt]);
 
   useEffect(() => {
     const controller = new AbortController();

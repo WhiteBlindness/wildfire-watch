@@ -201,7 +201,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
         locationName={locationName ?? fallbackLocationName}
         region={selection.region}
         country={selection.country}
-        publishedAfter={selection.startedAt}
+        startedAt={selection.startedAt}
         selectionId={selection.id}
       />
     </div>

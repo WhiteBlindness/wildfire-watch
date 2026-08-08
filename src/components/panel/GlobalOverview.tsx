@@ -216,9 +216,9 @@ function MetricCard({
 }) {
   return (
     <div className={`rounded-lg border border-border/60 bg-surface/75 p-4 shadow-lg backdrop-blur-xl ${className ?? ""}`}>
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-foreground/50">{label}</p>
-        {badge && <span className="shrink-0 rounded-full bg-amber-500/12 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-700 dark:text-amber-300">{badge}</span>}
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
+        <p className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-wide text-foreground/50">{label}</p>
+        {badge && <span className="inline-flex max-w-full min-w-0 shrink items-center justify-center whitespace-normal break-words rounded-full bg-amber-500/12 px-1.5 py-1 text-center text-[11px] font-semibold leading-tight tracking-[0.08em] text-amber-700 dark:text-amber-300 sm:shrink-0 sm:px-2">{badge}</span>}
       </div>
       <p
         className={`mt-1 text-2xl font-semibold tabular-nums ${

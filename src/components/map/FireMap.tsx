@@ -35,7 +35,7 @@ const SATELLITE_TILE_URL =
 const SATELLITE_SOURCE_ID = "satellite-src";
 const SATELLITE_LAYER_ID = "satellite-layer";
 const SATELLITE_BACKGROUND_LAYER_ID = "satellite-background";
-const SATELLITE_BACKGROUND = DARK_BACKGROUND;
+const SATELLITE_BACKGROUND = "#051937";
 const SATELLITE_ATTRIBUTION = "© Esri, Maxar, Earthstar Geographics, and the GIS User Community";
 
 const MARKER_LAYER_ID = "fire-markers";

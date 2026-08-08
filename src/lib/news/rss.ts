@@ -15,12 +15,16 @@ export interface NewsQueryInput {
   location?: string | null;
   region?: string | null;
   country?: string | null;
+  startedAt?: string | null;
+  /** @deprecated Use startedAt for provider query inputs. */
   publishedAfter?: string | null;
 }
 
 export const DEFAULT_NEWS_LIMIT = 3;
-export const FIRE_NEWS_QUERY = '("wildfire" OR "fire" OR "incêndio")';
-const FIRE_KEYWORD_PATTERN = /\b(?:wildfire|fire|incendio|incêndio)\b/i;
+export const NEWS_LOOKBACK_HOURS = 48;
+const NEWS_LOOKBACK_MS = NEWS_LOOKBACK_HOURS * 60 * 60 * 1000;
+export const FIRE_NEWS_QUERY = "(wildfire OR fire OR incêndio)";
+const FIRE_KEYWORD_PATTERN = /\b(?:wildfires?|fires?|incendios?|incêndios?)\b/i;
 const NAMED_ENTITIES: Record<string, string> = {
   amp: "&",
   apos: "'",
@@ -29,6 +33,15 @@ const NAMED_ENTITIES: Record<string, string> = {
   nbsp: " ",
   quot: '"',
 };
+
+export function getEffectiveNewsCutoff(startedAt: string | null | undefined): string | null {
+  if (!startedAt) return null;
+  const startedAtMs = Date.parse(startedAt);
+  if (!Number.isFinite(startedAtMs)) return null;
+
+  const effectiveCutoff = new Date(startedAtMs - NEWS_LOOKBACK_MS);
+  return Number.isNaN(effectiveCutoff.getTime()) ? null : effectiveCutoff.toISOString();
+}
 
 export function decodeXml(value: string): string {
   const unwrapped = value.trim().replace(/^<!\[CDATA\[|\]\]>$/g, "");
@@ -144,30 +157,22 @@ export function parseRssArticles(xml: string, options: RssFilterOptions = {}): N
   return filterRssArticles(parsed, options);
 }
 
-function uniqueQueryTerms(input: NewsQueryInput): string[] {
-  const seen = new Set<string>();
-  return [input.location, input.region, input.country]
-    .map((term) => term?.trim() ?? "")
-    .filter((term) => term.length > 0)
-    .filter((term) => {
-      const key = term.toLocaleLowerCase("en");
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .map((term) => `"${term.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
+function primaryQueryTerm(input: NewsQueryInput): string | null {
+  const location = input.location?.split(/[\/,]/)[0]?.trim();
+  const term = [location, input.region?.trim(), input.country?.trim()]
+    .find((candidate): candidate is string => Boolean(candidate));
+  return term ? `"${term.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : null;
 }
 
-function afterDate(publishedAfter: string | null | undefined): string | null {
-  if (!publishedAfter) return null;
-  const parsed = Date.parse(publishedAfter);
-  return Number.isFinite(parsed) ? new Date(parsed).toISOString().slice(0, 10) : null;
+function afterDate(startedAt: string | null | undefined): string | null {
+  const effectiveCutoff = getEffectiveNewsCutoff(startedAt);
+  return effectiveCutoff?.slice(0, 10) ?? null;
 }
 
 function buildProviderQuery(input: NewsQueryInput): string {
-  const terms = uniqueQueryTerms(input);
-  const date = afterDate(input.publishedAfter);
-  return [FIRE_NEWS_QUERY, ...terms, date ? `after:${date}` : null]
+  const scope = primaryQueryTerm(input);
+  const date = afterDate(input.startedAt ?? input.publishedAfter);
+  return [FIRE_NEWS_QUERY, scope, date ? `after:${date}` : null]
     .filter((part): part is string => Boolean(part))
     .join(" ");
 }

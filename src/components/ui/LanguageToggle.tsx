@@ -25,7 +25,7 @@ export default function LanguageToggle() {
           type="button"
           onClick={() => setLocale(option)}
           aria-pressed={locale === option}
-          className={`relative z-10 flex-1 text-xs font-semibold uppercase tracking-wide transition-colors ${
+          className={`relative z-10 flex flex-1 items-center justify-center p-0 text-xs font-semibold uppercase leading-none tracking-wide transition-colors ${
             locale === option ? "text-background" : "text-foreground/60"
           }`}
         >

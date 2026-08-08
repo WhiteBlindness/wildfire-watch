@@ -1,6 +1,7 @@
 import {
   buildBingNewsQuery,
   buildGoogleNewsQuery,
+  getEffectiveNewsCutoff,
   parseRssArticles,
   type NewsArticle,
   type NewsQueryInput,
@@ -16,7 +17,8 @@ interface NewsRequest extends NewsQueryInput {
   location: string;
   region: string;
   country: string;
-  publishedAfter: string;
+  startedAt: string;
+  effectiveCutoff: string;
   locale: "pt" | "en";
 }
 
@@ -70,13 +72,13 @@ async function fetchRssArticles(endpoint: URL, publishedAfter: string, timeoutMs
 
 async function fetchArticles(endpoint: URL, request: NewsRequest, timeoutMs = 4_000): Promise<NewsArticle[]> {
   try {
-    return await fetchRssArticles(endpoint, request.publishedAfter, timeoutMs);
+    return await fetchRssArticles(endpoint, request.effectiveCutoff, timeoutMs);
   } catch (error) {
     if (endpoint.hostname !== "news.google.com") throw error;
 
     const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     console.warn(`Google News RSS unavailable; using direct RSS fallback (${reason})`);
-    return fetchRssArticles(buildBingEndpoint(request), request.publishedAfter, 6_000);
+    return fetchRssArticles(buildBingEndpoint(request), request.effectiveCutoff, 6_000);
   }
 }
 
@@ -116,19 +118,21 @@ export async function GET(request: Request): Promise<Response> {
   const location = url.searchParams.get("location")?.trim() ?? "";
   const region = url.searchParams.get("region")?.trim() ?? "";
   const country = url.searchParams.get("country")?.trim() ?? "";
-  const publishedAfter = url.searchParams.get("publishedAfter")?.trim() ?? "";
+  const startedAt = url.searchParams.get("startedAt")?.trim() ?? "";
   const rawLocale = url.searchParams.get("locale");
 
   if (location.length < 2 || location.length > 120) return invalidRequest("Invalid location");
   if (region.length > 120 || country.length > 120) return invalidRequest("Invalid geography");
-  if (!Number.isFinite(Date.parse(publishedAfter))) return invalidRequest("Invalid publishedAfter");
+  const effectiveCutoff = getEffectiveNewsCutoff(startedAt);
+  if (!effectiveCutoff) return invalidRequest("Invalid startedAt");
   if (rawLocale !== null && rawLocale !== "pt" && rawLocale !== "en") return invalidRequest("Invalid locale");
 
   const newsRequest: NewsRequest = {
     location,
     region,
     country,
-    publishedAfter,
+    startedAt,
+    effectiveCutoff,
     locale: rawLocale === "pt" ? "pt" : "en",
   };
 
