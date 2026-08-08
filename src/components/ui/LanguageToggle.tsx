@@ -15,7 +15,8 @@ export default function LanguageToggle() {
       className="relative flex h-11 w-24 rounded-full border border-border bg-surface-muted p-1"
     >
       <span
-        className={`absolute top-1 left-1 h-9 w-11 rounded-full bg-foreground/90 transition-transform ${
+        aria-hidden="true"
+        className={`pointer-events-none absolute left-1 top-1/2 h-9 w-11 -translate-y-1/2 rounded-full bg-foreground/90 transition-transform ${
           locale === "en" ? "translate-x-11" : "translate-x-0"
         }`}
       />

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Map, { AttributionControl, Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
-import type { GeoJSONSource, Map as MapLibreMap, MapLibreEvent } from "maplibre-gl";
+import type { AddLayerObject, FilterSpecification, GeoJSONSource, Map as MapLibreMap, MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
 import { eventsToClusterSelection, eventToSelection } from "@/lib/wildfire/selection";
@@ -10,24 +10,18 @@ import { selectedEventToPolygonGeoJSON } from "@/lib/wildfire/geojson";
 import { eventsToTemporalMarkerGeoJSON } from "@/lib/wildfire/temporal";
 import { SEVERITY_COLOR } from "@/lib/wildfire/colors";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
+import {
+  DARK_BACKGROUND,
+  SATELLITE_BACKGROUND,
+  getCameraPadding as getMapCameraPadding,
+  getMapStyleUrl,
+  getSatelliteLayerPlan,
+  observeStyleReady,
+} from "./mapPresentation";
 
 // Free, no-API-key vector basemaps from CARTO — dark-matter fits the cinematic
 // dark theme, positron is the light-mode counterpart. Attribution is baked
 // into the style JSON already.
-const STYLE_URL = {
-  dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-  light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-} as const;
-
-// Satellite mode keeps one stable, dark vector style for labels and roads.
-// Theme changes should only affect the application chrome while imagery is
-// visible, otherwise the same satellite view changes under the visitor.
-const SATELLITE_STYLE_URL = STYLE_URL.dark;
-
-// Cinematic base: pin the dark style's background to slate-900 rather than
-// trusting dark-matter's default near-black, so heatmaps/borders pop consistently.
-const DARK_BACKGROUND = "#0f172a";
-
 // Free, no-API-key satellite imagery. It remains a stable instrument surface
 // across UI themes; FIRMS overlays and vector labels stay above the raster.
 const SATELLITE_TILE_URL =
@@ -35,7 +29,7 @@ const SATELLITE_TILE_URL =
 const SATELLITE_SOURCE_ID = "satellite-src";
 const SATELLITE_LAYER_ID = "satellite-layer";
 const SATELLITE_BACKGROUND_LAYER_ID = "satellite-background";
-const SATELLITE_BACKGROUND = "#051937";
+const SATELLITE_OCEAN_MASK_LAYER_ID = "satellite-ocean-mask";
 const SATELLITE_ATTRIBUTION = "© Esri, Maxar, Earthstar Geographics, and the GIS User Community";
 
 const MARKER_LAYER_ID = "fire-markers";
@@ -88,18 +82,12 @@ function pickInteractiveFeature(features: readonly InteractiveFeature[] | undefi
   return null;
 }
 
-function getCameraPadding(panelOpen: boolean): { top: number; right: number; bottom: number; left: number } {
-  const isDesktop = window.innerWidth >= 768;
-  return {
-    top: 88,
-    right: isDesktop ? 440 : 24,
-    bottom: isDesktop
-      ? 56
-      : panelOpen
-        ? Math.min(Math.round(window.innerHeight * 0.46), Math.max(120, window.innerHeight - 120))
-        : 88,
-    left: 40,
-  };
+function getCameraPadding(panelOpen: boolean) {
+  return getMapCameraPadding({
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    panelOpen,
+  });
 }
 
 function flyToLocation(
@@ -109,10 +97,12 @@ function flyToLocation(
   panelOpen: boolean,
 ): void {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const padding = getCameraPadding(panelOpen);
+  writeMapCameraState(map, padding, "flyTo");
   map.flyTo({
     center: [location.lng, location.lat],
     zoom,
-    padding: getCameraPadding(panelOpen),
+    padding,
     duration: reducedMotion ? 0 : FLY_DURATION_MS,
     speed: 0.9,
     curve: 1.42,
@@ -121,42 +111,46 @@ function flyToLocation(
   });
 }
 
-function findHybridAnchor(map: MapLibreMap): string | undefined {
+function moveLayerBefore(map: MapLibreMap, layerId: string, beforeLayerId: string | undefined): void {
+  if (!beforeLayerId || !map.getLayer(layerId)) return;
   const layers = map.getStyle().layers ?? [];
-  return layers.find((layer) => layer.type === "symbol" || (layer.type === "line" && /boundary|admin/i.test(layer.id)))?.id;
-}
-function findSatelliteBackgroundAnchor(map: MapLibreMap): string | undefined {
-  return map.getStyle().layers?.find((layer) => layer.type !== "background")?.id;
+  const currentIndex = layers.findIndex((layer) => layer.id === layerId);
+  const beforeIndex = layers.findIndex((layer) => layer.id === beforeLayerId);
+  if (currentIndex !== -1 && beforeIndex !== -1 && currentIndex !== beforeIndex - 1) {
+    map.moveLayer(layerId, beforeLayerId);
+  }
 }
 
+function writeMapCameraState(
+  map: MapLibreMap,
+  padding: { top: number; right: number; bottom: number; left: number },
+  action: "flyTo" | "fitBounds",
+): void {
+  const mapRoot = map.getContainer().closest<HTMLElement>("[data-map-style-url]");
+  mapRoot?.setAttribute("data-map-camera-padding", JSON.stringify(padding));
+  mapRoot?.setAttribute("data-map-camera-action", action);
+}
 
 function syncSatelliteLayer(map: MapLibreMap, mode: BasemapMode): void {
-  if (!map.isStyleLoaded()) return;
-
   if (mode === "plain") {
     if (map.getLayer(SATELLITE_LAYER_ID)) map.removeLayer(SATELLITE_LAYER_ID);
+    if (map.getLayer(SATELLITE_OCEAN_MASK_LAYER_ID)) map.removeLayer(SATELLITE_OCEAN_MASK_LAYER_ID);
     if (map.getLayer(SATELLITE_BACKGROUND_LAYER_ID)) map.removeLayer(SATELLITE_BACKGROUND_LAYER_ID);
     if (map.getSource(SATELLITE_SOURCE_ID)) map.removeSource(SATELLITE_SOURCE_ID);
     return;
   }
 
+  const initialPlan = getSatelliteLayerPlan(map.getStyle().layers ?? []);
   if (!map.getLayer(SATELLITE_BACKGROUND_LAYER_ID)) {
-    const backgroundAnchor = findSatelliteBackgroundAnchor(map);
     map.addLayer({
       id: SATELLITE_BACKGROUND_LAYER_ID,
       type: "background",
       paint: { "background-color": SATELLITE_BACKGROUND },
-    }, backgroundAnchor);
+    }, initialPlan.backgroundBeforeLayerId);
   } else {
     map.setPaintProperty(SATELLITE_BACKGROUND_LAYER_ID, "background-color", SATELLITE_BACKGROUND);
-    const backgroundAnchor = findSatelliteBackgroundAnchor(map);
-    const layers = map.getStyle().layers ?? [];
-    const currentIndex = layers.findIndex((layer) => layer.id === SATELLITE_BACKGROUND_LAYER_ID);
-    const anchorIndex = backgroundAnchor ? layers.findIndex((layer) => layer.id === backgroundAnchor) : -1;
-    if (backgroundAnchor && currentIndex !== anchorIndex - 1) {
-      map.moveLayer(SATELLITE_BACKGROUND_LAYER_ID, backgroundAnchor);
-    }
   }
+  moveLayerBefore(map, SATELLITE_BACKGROUND_LAYER_ID, initialPlan.backgroundBeforeLayerId);
 
   if (!map.getSource(SATELLITE_SOURCE_ID)) {
     map.addSource(SATELLITE_SOURCE_ID, {
@@ -178,15 +172,42 @@ function syncSatelliteLayer(map: MapLibreMap, mode: BasemapMode): void {
         "raster-contrast": 0.16,
         "raster-opacity": 0.88,
       },
-    }, findHybridAnchor(map));
+    }, getSatelliteLayerPlan(map.getStyle().layers ?? []).overlayBeforeLayerId);
   } else {
-    const anchor = findHybridAnchor(map);
-    const layers = map.getStyle().layers ?? [];
-    const currentIndex = layers.findIndex((layer) => layer.id === SATELLITE_LAYER_ID);
-    const anchorIndex = anchor ? layers.findIndex((layer) => layer.id === anchor) : -1;
-    if (anchor && currentIndex !== anchorIndex - 1) {
-      map.moveLayer(SATELLITE_LAYER_ID, anchor);
+    moveLayerBefore(
+      map,
+      SATELLITE_LAYER_ID,
+      getSatelliteLayerPlan(map.getStyle().layers ?? []).overlayBeforeLayerId,
+    );
+  }
+
+  const layerPlan = getSatelliteLayerPlan(map.getStyle().layers ?? []);
+  if (layerPlan.oceanLayer) {
+    const oceanMask: AddLayerObject = {
+      id: SATELLITE_OCEAN_MASK_LAYER_ID,
+      type: "fill",
+      source: layerPlan.oceanLayer.source,
+      ...(layerPlan.oceanLayer.sourceLayer ? { "source-layer": layerPlan.oceanLayer.sourceLayer } : {}),
+      ...(layerPlan.oceanLayer.filter !== undefined
+        ? { filter: layerPlan.oceanLayer.filter as FilterSpecification }
+        : {}),
+      paint: {
+        "fill-color": SATELLITE_BACKGROUND,
+        "fill-opacity": 1,
+      },
+    };
+    if (!map.getLayer(SATELLITE_OCEAN_MASK_LAYER_ID)) {
+      map.addLayer(oceanMask, layerPlan.overlayBeforeLayerId);
+    } else {
+      map.setPaintProperty(SATELLITE_OCEAN_MASK_LAYER_ID, "fill-color", SATELLITE_BACKGROUND);
+      map.setPaintProperty(SATELLITE_OCEAN_MASK_LAYER_ID, "fill-opacity", 1);
+      if (layerPlan.oceanLayer.filter !== undefined) {
+        map.setFilter(SATELLITE_OCEAN_MASK_LAYER_ID, layerPlan.oceanLayer.filter as FilterSpecification);
+      }
+      moveLayerBefore(map, SATELLITE_OCEAN_MASK_LAYER_ID, layerPlan.overlayBeforeLayerId);
     }
+  } else if (map.getLayer(SATELLITE_OCEAN_MASK_LAYER_ID)) {
+    map.removeLayer(SATELLITE_OCEAN_MASK_LAYER_ID);
   }
 }
 
@@ -205,6 +226,7 @@ interface FireMapProps {
 export default function FireMap({ events, perimeterEvents, selectedFire, onSelect, onMapLoad, theme, basemapMode, countryScope, timelineHour }: FireMapProps) {
   const mapRef = useRef<MapRef>(null);
   const hasReportedMapLoadRef = useRef(false);
+  const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
   const [isHoveringInteractiveFeature, setIsHoveringInteractiveFeature] = useState(false);
 
   const selectionRequestRef = useRef(0);
@@ -227,6 +249,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   );
 
   const eventById = useMemo(() => new globalThis.Map(events.map((event) => [event.id, event])), [events]);
+  const mapStyleUrl = getMapStyleUrl(theme, basemapMode);
 
   // Updating the raw source data, rather than filtering rendered cluster
   // layers, makes MapLibre rebuild native clusters and point counts for the
@@ -298,14 +321,15 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   }, []);
 
   const applyStyleEnhancements = useCallback((map: MapLibreMap) => {
-    if (basemapMode === "plain" && theme === "dark" && map.getLayer("background")) {
-      map.setPaintProperty("background", "background-color", DARK_BACKGROUND);
+    if (basemapMode === "plain" && map.getLayer("background")) {
+      map.setPaintProperty("background", "background-color", theme === "dark" ? DARK_BACKGROUND : "#f5f6f7");
     }
     syncSatelliteLayer(map, basemapMode);
   }, [basemapMode, theme]);
 
   const handleLoad = useCallback(
     (e: MapLibreEvent) => {
+      setMapInstance(e.target);
       applyStyleEnhancements(e.target);
       if (!hasReportedMapLoadRef.current) {
         hasReportedMapLoadRef.current = true;
@@ -315,17 +339,10 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     [applyStyleEnhancements, onMapLoad],
   );
 
-  const handleStyleData = useCallback(
-    (e: MapLibreEvent) => {
-      if (e.target.isStyleLoaded()) applyStyleEnhancements(e.target);
-    },
-    [applyStyleEnhancements],
-  );
-
   useEffect(() => {
-    const map = mapRef.current?.getMap();
-    if (map?.isStyleLoaded()) applyStyleEnhancements(map);
-  }, [applyStyleEnhancements]);
+    if (!mapInstance) return;
+    return observeStyleReady(mapInstance, () => applyStyleEnhancements(mapInstance));
+  }, [applyStyleEnhancements, mapInstance, mapStyleUrl]);
 
   // One camera transition per selection identity. Point clicks only update
   // selection here; this effect owns their flight so map and panel selection
@@ -340,15 +357,17 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         flyToLocation(map, selectedFire.location, FIRE_DETAIL_ZOOM, true);
       } else if (countryScope !== "global" && events.length > 0) {
         if (events.length === 1) {
-          flyToLocation(map, events[0].location, 7, false);
+          flyToLocation(map, events[0].location, 7, true);
         } else {
           const lngs = events.map((event) => event.location.lng);
           const lats = events.map((event) => event.location.lat);
           const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          const padding = getCameraPadding(true);
+          writeMapCameraState(map, padding, "fitBounds");
           map.fitBounds(
             [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
             {
-              padding: getCameraPadding(false),
+              padding,
               maxZoom: 7,
               duration: reducedMotion ? 0 : FLY_DURATION_MS,
               essential: !reducedMotion,
@@ -364,11 +383,17 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   }, [countryScope, events, selectedFire?.id, selectedFire?.kind, selectedFire?.location]);
 
   return (
-    <div className="wildfire-watch-map-canvas h-full w-full" data-basemap-mode={basemapMode}>
+    <div
+      className="wildfire-watch-map-canvas h-full w-full"
+      data-basemap-mode={basemapMode}
+      data-map-style-theme={basemapMode === "satellite" ? "satellite" : theme}
+      data-map-style-url={mapStyleUrl}
+    >
       <Map
       ref={mapRef}
       initialViewState={{ longitude: WORLD_VIEW.longitude, latitude: WORLD_VIEW.latitude, zoom: WORLD_VIEW.zoom }}
-      mapStyle={basemapMode === "satellite" ? SATELLITE_STYLE_URL : STYLE_URL[theme]}
+      mapStyle={mapStyleUrl}
+      styleDiffing={false}
       // A globe keeps global anomaly distribution legible at the world view;
       // selected-fire flyTo transitions naturally into the local detail view.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -381,7 +406,6 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
       cursor={isHoveringInteractiveFeature ? "pointer" : "grab"}
       attributionControl={false}
       onLoad={handleLoad}
-      onStyleData={handleStyleData}
     >
       <AttributionControl key={basemapMode} compact position="bottom-left" />
       {/* Satellite raster is managed imperatively beneath vector overlays. */}
