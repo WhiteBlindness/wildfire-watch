@@ -11,6 +11,9 @@
     "test:air-quality": "esbuild ./src/app/api/air-quality/route.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/air-quality.test.cjs && node ./node_modules/.cache/wildfire-watch/air-quality.test.cjs",
     "test:sampling": "esbuild ./workers/firms-ingest.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/firms-ingest.test.cjs && node ./node_modules/.cache/wildfire-watch/firms-ingest.test.cjs",
     "test:temporal": "esbuild ./src/lib/wildfire/temporal.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/temporal.test.cjs && node ./node_modules/.cache/wildfire-watch/temporal.test.cjs",
+    "test:overview-metrics": "esbuild ./src/lib/wildfire/overview-metrics.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/overview-metrics.test.cjs && node ./node_modules/.cache/wildfire-watch/overview-metrics.test.cjs",
+    "test:rss": "esbuild ./src/lib/news/rss.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/rss.test.cjs && node ./node_modules/.cache/wildfire-watch/rss.test.cjs",
+    "test:news-route": "esbuild ./src/app/api/news/route.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/news-route.test.cjs && node ./node_modules/.cache/wildfire-watch/news-route.test.cjs",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"

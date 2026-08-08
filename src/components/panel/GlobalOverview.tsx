@@ -1,8 +1,10 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { FeedLoadStatus, FeedFreshness, WildfireEvent, WildfireFeedSnapshot } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
+import { calculateOverviewMetrics } from "@/lib/wildfire/overview-metrics";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 const FEED_STALE_AFTER_MS = 90 * 60 * 1000;
@@ -26,11 +28,8 @@ export default function GlobalOverview({
 }: GlobalOverviewProps) {
   const { locale, t } = useLocale();
   const [now, setNow] = useState<number | null>(null);
-  const totalFocos = events.length;
-  const maxFrpMw = events.reduce<number | null>((max, event) => {
-    if (event.maxFrpMw == null) return max;
-    return max == null ? event.maxFrpMw : Math.max(max, event.maxFrpMw);
-  }, null);
+  const totalFoci = events.length;
+  const metrics = useMemo(() => calculateOverviewMetrics(events), [events]);
   const freshness = useMemo(
     () => getFeedFreshness(feedSnapshot, feedState, now),
     [feedSnapshot, feedState, now],
@@ -40,14 +39,16 @@ export default function GlobalOverview({
   const relativeFreshness = hasValidGeneratedAt && now !== null
     ? formatRelativeFreshness(feedSnapshot!.generatedAt!, now, locale, t.overview.freshnessUpdated)
     : null;
-  const exactTimestamp = feedSnapshot?.generatedAt && hasValidGeneratedAt && now !== null
-    ? new Date(feedSnapshot.generatedAt).toLocaleString(locale === "pt" ? "pt-PT" : "en-GB", {
+  const exactTimestamp = hasValidGeneratedAt
+    ? new Intl.DateTimeFormat(locale === "pt" ? "pt-PT" : "en-GB", {
         dateStyle: "medium",
         timeStyle: "short",
-      })
-    : feedSnapshot?.generatedAt ?? null;
+      }).format(new Date(parsedGeneratedAt))
+    : null;
   const sourceId = feedSnapshot?.sourceId ?? "NASA FIRMS VIIRS_SNPP_NRT";
   const sourceLabel = feedSnapshot?.sourceLabel ?? "NASA FIRMS Satellite Telemetry";
+  const lastUpdateText = exactTimestamp
+    ?? (feedState === "loading" && !feedSnapshot ? t.overview.freshnessLoading : t.overview.freshnessUnavailable);
 
   useEffect(() => {
     const initialTimer = window.setTimeout(() => setNow(Date.now()), 0);
@@ -76,27 +77,10 @@ export default function GlobalOverview({
           </div>
           <FreshnessBadge freshness={freshness} labels={t.overview} />
         </div>
-        <dl className="mt-3 grid grid-cols-1 gap-2 border-t border-border/45 pt-3 text-xs sm:grid-cols-2">
+        <dl className="mt-3 border-t border-border/45 pt-3 text-xs">
           <div className="min-w-0">
             <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/45">{t.overview.sourceIdentifier}</dt>
             <dd className="mt-1 break-words font-mono text-[11px] text-foreground/75">{sourceId}</dd>
-          </div>
-          <div className="min-w-0">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/45">{t.overview.freshnessUpdated}</dt>
-            <dd className="mt-1 text-foreground/80">
-              {freshness === "loading" ? t.overview.freshnessLoading : relativeFreshness && feedSnapshot?.generatedAt ? (
-                <time dateTime={feedSnapshot.generatedAt} title={exactTimestamp ?? undefined}>
-                  {relativeFreshness}
-                </time>
-              ) : (
-                t.overview.freshnessUnavailable
-              )}
-            </dd>
-            {exactTimestamp && feedSnapshot?.generatedAt && (
-              <p className="mt-1 text-[11px] text-foreground/45">
-                <time dateTime={feedSnapshot.generatedAt}>{`${t.overview.freshnessGeneratedAt}: ${exactTimestamp}`}</time>
-              </p>
-            )}
           </div>
         </dl>
         {freshness === "stale" && (
@@ -118,16 +102,42 @@ export default function GlobalOverview({
         </select>
       </label>
 
-      <div className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <MetricCard
           label={t.overview.metricFoci}
-          value={feedSnapshot ? formatThousands(totalFocos) : "—"}
+          value={feedSnapshot ? formatThousands(totalFoci) : "—"}
           tone="neutral"
         />
         <MetricCard
           label={t.overview.metricMaxFrp}
-          value={maxFrpMw != null ? `${formatThousands(maxFrpMw)} MW` : "—"}
+          value={metrics ? `${formatMegawatts(metrics.maxFrpMw, locale)} MW` : "—"}
           tone="critical"
+        />
+        <MetricCard
+          label={t.overview.metricAverageFrp}
+          value={metrics ? `${formatMegawatts(metrics.averageFrpMw, locale)} MW` : "—"}
+          tone="neutral"
+        />
+        <MetricCard
+          label={t.overview.metricProjectedBurnArea}
+          badge={t.overview.projectionLabel}
+          value={metrics ? `${formatHectares(metrics.projectedBurnAreaHectares, locale)} ha` : "—"}
+          note={t.overview.projectionMethodology}
+          tone="neutral"
+        />
+        <MetricCard
+          className="col-span-2 sm:col-span-1"
+          label={t.overview.metricLastUpdate}
+          value={lastUpdateText}
+          valueNode={feedSnapshot?.generatedAt && exactTimestamp ? (
+            <time dateTime={feedSnapshot.generatedAt} title={relativeFreshness ?? undefined} className="block">
+              <span className="block text-lg leading-tight">{exactTimestamp}</span>
+              {relativeFreshness && (
+                <span className="mt-1 block text-[11px] font-medium text-foreground/50">{relativeFreshness}</span>
+              )}
+            </time>
+          ) : undefined}
+          tone={freshness === "stale" ? "warning" : freshness === "unavailable" ? "critical" : "neutral"}
         />
       </div>
 
@@ -142,7 +152,6 @@ type OverviewLabels = {
   freshnessStale: string;
   freshnessUnavailable: string;
   freshnessUpdated: string;
-  freshnessGeneratedAt: string;
   staleLastKnown: string;
 };
 
@@ -189,24 +198,49 @@ function FreshnessBadge({ freshness, labels }: { freshness: FeedFreshness | "loa
 }
 
 function MetricCard({
+  badge,
+  className,
   label,
+  note,
   value,
+  valueNode,
   tone,
 }: {
+  badge?: string;
+  className?: string;
   label: string;
+  note?: string;
   value: string;
-  tone: "neutral" | "critical";
+  valueNode?: ReactNode;
+  tone: "neutral" | "critical" | "warning";
 }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-surface/75 p-4 shadow-lg backdrop-blur-xl">
-      <p className="text-xs font-semibold uppercase tracking-wide text-foreground/50">{label}</p>
+    <div className={`rounded-lg border border-border/60 bg-surface/75 p-4 shadow-lg backdrop-blur-xl ${className ?? ""}`}>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-foreground/50">{label}</p>
+        {badge && <span className="shrink-0 rounded-full bg-amber-500/12 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-700 dark:text-amber-300">{badge}</span>}
+      </div>
       <p
         className={`mt-1 text-2xl font-semibold tabular-nums ${
-          tone === "critical" ? "text-rose-500" : "text-foreground"
+          tone === "critical" ? "text-rose-500" : tone === "warning" ? "text-amber-500" : "text-foreground"
         }`}
       >
-        {value}
+        {valueNode ?? value}
       </p>
+      {note && <p className="mt-2 text-[11px] leading-4 text-foreground/50">{note}</p>}
     </div>
   );
+}
+
+function formatMegawatts(value: number, locale: "en" | "pt"): string {
+  return new Intl.NumberFormat(locale === "pt" ? "pt-PT" : "en-GB", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function formatHectares(value: number, locale: "en" | "pt"): string {
+  return new Intl.NumberFormat(locale === "pt" ? "pt-PT" : "en-GB", {
+    maximumFractionDigits: 1,
+  }).format(value);
 }

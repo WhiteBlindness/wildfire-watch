@@ -254,9 +254,9 @@ body {
   line-height: 1.35;
 }
 
-.wildfire-watch .maplibregl-ctrl-bottom-right {
-  right: 0.75rem;
-  bottom: 10.5rem;
+.wildfire-watch .maplibregl-ctrl-bottom-left {
+  left: 0.75rem;
+  bottom: calc(4.25rem + 0.75rem);
   z-index: 35;
   pointer-events: auto;
 }
@@ -282,16 +282,71 @@ html:not(.dark) .wildfire-watch .maplibregl-ctrl-attrib {
 }
 
 @media (max-width: 767px) {
-  [data-map-panel-open="true"] .wildfire-watch-map .maplibregl-ctrl-bottom-right {
+  [data-map-panel-state="global-expanded"] .wildfire-watch-map-canvas .maplibregl-ctrl-bottom-left {
+    bottom: calc(60vh + 0.75rem);
+  }
+
+  [data-map-panel-state="detail-expanded"] .wildfire-watch-map-canvas .maplibregl-ctrl-bottom-left {
     bottom: calc(75vh + 0.75rem);
   }
 }
 
 @media (min-width: 768px) {
-  .wildfire-watch .maplibregl-ctrl-bottom-right {
-    right: 416px;
-    bottom: 7rem;
+  .wildfire-watch .maplibregl-ctrl-bottom-left {
+    left: 1rem;
+    bottom: 9rem;
   }
+}
+
+/* Satellite imagery is one stable instrument surface, even when the page
+   chrome is in the daylight-shift theme. */
+.wildfire-watch-map-canvas[data-basemap-mode="satellite"],
+.wildfire-watch-map-canvas[data-basemap-mode="satellite"] .maplibregl-map {
+  background-color: #0f172a;
+}
+
+.wildfire-watch[data-basemap-mode="satellite"] .mission-brand-chip,
+.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > *,
+.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > [role="group"] {
+  color: #e8eaed !important;
+  background-color: rgba(10, 13, 18, 0.78) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls button {
+  color: #e8eaed !important;
+}
+
+.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > [role="group"] > span {
+  background-color: #e8eaed !important;
+}
+
+.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > [role="group"] > button[aria-pressed="true"] {
+  color: #0f172a !important;
+}
+
+.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > button.group > span:first-child,
+.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > button:not(.group) > span {
+  color: #0f172a !important;
+  background-color: #e8eaed !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > button.group > span:last-child {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+.wildfire-watch[data-basemap-mode="satellite"] .maplibregl-ctrl-attrib {
+  color: #e8eaed;
+  background: rgba(10, 13, 18, 0.82);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+html:not(.dark) .wildfire-watch[data-basemap-mode="satellite"] .maplibregl-ctrl-attrib {
+  color: #e8eaed;
+  background: rgba(10, 13, 18, 0.82);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 @layer base {

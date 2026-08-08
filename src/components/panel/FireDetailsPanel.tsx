@@ -199,6 +199,9 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
         weather={weather}
         weatherFailed={weatherFailed}
         locationName={locationName ?? fallbackLocationName}
+        region={selection.region}
+        country={selection.country}
+        publishedAfter={selection.startedAt}
         selectionId={selection.id}
       />
     </div>

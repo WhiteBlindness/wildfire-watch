@@ -10,6 +10,9 @@ interface FireTelemetryDashboardProps {
   coordinates: { lat: number; lng: number };
   weather: FireWeather | null;
   locationName: string | null;
+  region: string;
+  country: string;
+  publishedAfter: string;
   selectionId: string;
   weatherFailed: boolean;
 }
@@ -47,7 +50,7 @@ interface AirQualityResponse {
   availability?: "available" | "no-nearby-monitor" | "unconfigured" | "upstream-error";
 }
 
-export default function FireTelemetryDashboard({ coordinates, weather, weatherFailed, locationName, selectionId }: FireTelemetryDashboardProps) {
+export default function FireTelemetryDashboard({ coordinates, weather, weatherFailed, locationName, region, country, publishedAfter, selectionId }: FireTelemetryDashboardProps) {
   const { locale, t } = useLocale();
   const [newsResult, setNewsResult] = useState<NewsResult | null>(null);
   const [isFetchingAQI, setIsFetchingAQI] = useState(true);
@@ -55,7 +58,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
   const [aqiError, setAqiError] = useState<AqiError | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const [airQualityRetryNonce, setAirQualityRetryNonce] = useState(0);
-  const requestKey = `${selectionId}:${locale}:${locationName ?? "pending"}:${retryNonce}`;
+  const requestKey = `${selectionId}:${locale}:${locationName ?? "pending"}:${region}:${country}:${publishedAfter}:${retryNonce}`;
   const hasCurrentResult = newsResult?.key === requestKey;
   const articles = hasCurrentResult ? newsResult.articles : [];
   const newsFailed = hasCurrentResult ? newsResult.failed : false;
@@ -65,7 +68,13 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
     if (!locationName) return;
 
     const controller = new AbortController();
-    const params = new URLSearchParams({ location: locationName, locale, version: "6" });
+    const params = new URLSearchParams({
+      location: locationName,
+      region,
+      country,
+      publishedAfter,
+      locale,
+    });
 
     fetch(`/api/news?${params}`, { signal: controller.signal })
       .then(async (response) => {
@@ -84,7 +93,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
       });
 
     return () => controller.abort();
-  }, [locale, locationName, requestKey]);
+  }, [country, locale, locationName, publishedAfter, region, requestKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -213,7 +222,10 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
             </button>
           </div>
         ) : articles.length === 0 ? (
-          <NewsMessage>{t.fireDetail.newsEmpty}</NewsMessage>
+          <div>
+            <NewsMessage>{t.fireDetail.newsEmpty}</NewsMessage>
+            <p className="mt-2 text-[11px] leading-4 text-foreground/45">{t.fireDetail.newsCoverageSinceDetection}</p>
+          </div>
         ) : (
           <ul className="space-y-2">
             {articles.map((article) => (
@@ -227,7 +239,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
                 >
                   <span className="min-w-0">
                     <span className="line-clamp-2 block text-xs font-medium leading-5 text-foreground/85">{article.title}</span>
-                    <time className="mt-1 block font-mono text-[11px] uppercase tracking-[0.06em] text-foreground/40">{new Date(article.publishedAt).toLocaleDateString(locale === "pt" ? "pt-PT" : "en-GB")}</time>
+                    <time dateTime={article.publishedAt} className="mt-1 block font-mono text-[11px] uppercase tracking-[0.06em] text-foreground/40">{new Date(article.publishedAt).toLocaleDateString(locale === "pt" ? "pt-PT" : "en-GB")}</time>
                   </span>
                   <ExternalLink aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/35 transition-colors group-hover:text-red-400" />
                 </a>

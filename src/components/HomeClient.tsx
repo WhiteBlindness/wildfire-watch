@@ -88,6 +88,11 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
   );
   const mapTheme = resolvedTheme === "light" ? "light" : "dark";
   const isInitialLoading = !isMapReady || (feedState === "loading" && !feedSnapshot);
+  const panelState = selectedFire
+    ? "detail-expanded"
+    : isPanelMinimized
+      ? "minimized"
+      : "global-expanded";
 
   const handleMapLoad = useCallback(() => {
     setIsMapReady(true);
@@ -113,6 +118,10 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
     <main
       className="wildfire-watch relative h-dvh w-full overflow-hidden"
       data-map-panel-open={selectedFire || !isPanelMinimized ? "true" : "false"}
+      data-map-panel-state={panelState}
+      data-map-panel-view={selectedFire ? "detail" : "global"}
+      data-map-panel-minimized={isPanelMinimized ? "true" : "false"}
+      data-basemap-mode={basemapMode}
     >
       {/* Keep MapLibre mounted under the branded lifecycle layer so it can
           measure the viewport and finish style work while data is pending. */}

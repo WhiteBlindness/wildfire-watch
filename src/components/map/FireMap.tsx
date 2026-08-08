@@ -19,18 +19,23 @@ const STYLE_URL = {
   light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
 } as const;
 
+// Satellite mode keeps one stable, dark vector style for labels and roads.
+// Theme changes should only affect the application chrome while imagery is
+// visible, otherwise the same satellite view changes under the visitor.
+const SATELLITE_STYLE_URL = STYLE_URL.dark;
+
 // Cinematic base: pin the dark style's background to slate-900 rather than
 // trusting dark-matter's default near-black, so heatmaps/borders pop consistently.
 const DARK_BACKGROUND = "#0f172a";
 
-// Free, no-API-key satellite imagery — only surfaced as a tactical-scanner
-// reveal once zoomed into a specific fire (see SATELLITE_OPACITY below); at
-// world scale it stays fully transparent so it never competes with the base
-// vector style.
+// Free, no-API-key satellite imagery. It remains a stable instrument surface
+// across UI themes; FIRMS overlays and vector labels stay above the raster.
 const SATELLITE_TILE_URL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 const SATELLITE_SOURCE_ID = "satellite-src";
 const SATELLITE_LAYER_ID = "satellite-layer";
+const SATELLITE_BACKGROUND_LAYER_ID = "satellite-background";
+const SATELLITE_BACKGROUND = DARK_BACKGROUND;
 const SATELLITE_ATTRIBUTION = "© Esri, Maxar, Earthstar Geographics, and the GIS User Community";
 
 const MARKER_LAYER_ID = "fire-markers";
@@ -120,14 +125,37 @@ function findHybridAnchor(map: MapLibreMap): string | undefined {
   const layers = map.getStyle().layers ?? [];
   return layers.find((layer) => layer.type === "symbol" || (layer.type === "line" && /boundary|admin/i.test(layer.id)))?.id;
 }
+function findSatelliteBackgroundAnchor(map: MapLibreMap): string | undefined {
+  return map.getStyle().layers?.find((layer) => layer.type !== "background")?.id;
+}
 
-function syncSatelliteLayer(map: MapLibreMap, mode: BasemapMode, theme: "dark" | "light"): void {
+
+function syncSatelliteLayer(map: MapLibreMap, mode: BasemapMode): void {
   if (!map.isStyleLoaded()) return;
 
   if (mode === "plain") {
     if (map.getLayer(SATELLITE_LAYER_ID)) map.removeLayer(SATELLITE_LAYER_ID);
+    if (map.getLayer(SATELLITE_BACKGROUND_LAYER_ID)) map.removeLayer(SATELLITE_BACKGROUND_LAYER_ID);
     if (map.getSource(SATELLITE_SOURCE_ID)) map.removeSource(SATELLITE_SOURCE_ID);
     return;
+  }
+
+  if (!map.getLayer(SATELLITE_BACKGROUND_LAYER_ID)) {
+    const backgroundAnchor = findSatelliteBackgroundAnchor(map);
+    map.addLayer({
+      id: SATELLITE_BACKGROUND_LAYER_ID,
+      type: "background",
+      paint: { "background-color": SATELLITE_BACKGROUND },
+    }, backgroundAnchor);
+  } else {
+    map.setPaintProperty(SATELLITE_BACKGROUND_LAYER_ID, "background-color", SATELLITE_BACKGROUND);
+    const backgroundAnchor = findSatelliteBackgroundAnchor(map);
+    const layers = map.getStyle().layers ?? [];
+    const currentIndex = layers.findIndex((layer) => layer.id === SATELLITE_BACKGROUND_LAYER_ID);
+    const anchorIndex = backgroundAnchor ? layers.findIndex((layer) => layer.id === backgroundAnchor) : -1;
+    if (backgroundAnchor && currentIndex !== anchorIndex - 1) {
+      map.moveLayer(SATELLITE_BACKGROUND_LAYER_ID, backgroundAnchor);
+    }
   }
 
   if (!map.getSource(SATELLITE_SOURCE_ID)) {
@@ -145,8 +173,8 @@ function syncSatelliteLayer(map: MapLibreMap, mode: BasemapMode, theme: "dark" |
       type: "raster",
       source: SATELLITE_SOURCE_ID,
       paint: {
-        "raster-brightness-max": theme === "dark" ? 0.58 : 0.82,
-        "raster-saturation": theme === "dark" ? -0.35 : -0.08,
+        "raster-brightness-max": 0.64,
+        "raster-saturation": -0.28,
         "raster-contrast": 0.16,
         "raster-opacity": 0.88,
       },
@@ -270,10 +298,10 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   }, []);
 
   const applyStyleEnhancements = useCallback((map: MapLibreMap) => {
-    if (theme === "dark" && map.getLayer("background")) {
+    if (basemapMode === "plain" && theme === "dark" && map.getLayer("background")) {
       map.setPaintProperty("background", "background-color", DARK_BACKGROUND);
     }
-    syncSatelliteLayer(map, basemapMode, theme);
+    syncSatelliteLayer(map, basemapMode);
   }, [basemapMode, theme]);
 
   const handleLoad = useCallback(
@@ -336,10 +364,11 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   }, [countryScope, events, selectedFire?.id, selectedFire?.kind, selectedFire?.location]);
 
   return (
-    <Map
+    <div className="wildfire-watch-map-canvas h-full w-full" data-basemap-mode={basemapMode}>
+      <Map
       ref={mapRef}
       initialViewState={{ longitude: WORLD_VIEW.longitude, latitude: WORLD_VIEW.latitude, zoom: WORLD_VIEW.zoom }}
-      mapStyle={STYLE_URL[theme]}
+      mapStyle={basemapMode === "satellite" ? SATELLITE_STYLE_URL : STYLE_URL[theme]}
       // A globe keeps global anomaly distribution legible at the world view;
       // selected-fire flyTo transitions naturally into the local detail view.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -354,7 +383,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
       onLoad={handleLoad}
       onStyleData={handleStyleData}
     >
-      <AttributionControl key={basemapMode} compact position="bottom-right" />
+      <AttributionControl key={basemapMode} compact position="bottom-left" />
       {/* Satellite raster is managed imperatively beneath vector overlays. */}
 
       {/* Native clusters replace the former 6,000-point macro heatmap. */}
@@ -559,6 +588,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
           }}
         />
       </Source>
-    </Map>
+      </Map>
+    </div>
   );
 }

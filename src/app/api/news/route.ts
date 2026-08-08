@@ -1,57 +1,51 @@
+import {
+  buildBingNewsQuery,
+  buildGoogleNewsQuery,
+  parseRssArticles,
+  type NewsArticle,
+  type NewsQueryInput,
+} from "@/lib/news/rss";
+
 export const dynamic = "force-dynamic";
 
-interface NewsArticle {
-  title: string;
-  link: string;
-  publishedAt: string;
+const NEWS_CACHE_HEADERS = {
+  "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=3600",
+};
+
+interface NewsRequest extends NewsQueryInput {
+  location: string;
+  region: string;
+  country: string;
+  publishedAfter: string;
+  locale: "pt" | "en";
 }
 
-function decodeXml(value: string): string {
-  const unwrapped = value.trim().replace(/^<!\[CDATA\[|\]\]>$/g, "");
-  const namedEntities: Record<string, string> = {
-    amp: "&",
-    apos: "'",
-    gt: ">",
-    lt: "<",
-    quot: '"',
-  };
-
-  return unwrapped.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (entity, token: string) => {
-    if (token.startsWith("#x")) return String.fromCodePoint(Number.parseInt(token.slice(2), 16));
-    if (token.startsWith("#")) return String.fromCodePoint(Number.parseInt(token.slice(1), 10));
-    return namedEntities[token.toLowerCase()] ?? entity;
-  });
+function invalidRequest(message: string): Response {
+  return Response.json({ error: message }, { status: 400 });
 }
 
-function readTag(itemXml: string, tag: string): string | null {
-  const match = itemXml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "i"));
-  return match ? decodeXml(match[1]) : null;
+function buildGoogleEndpoint(request: NewsRequest): URL {
+  const endpoint = new URL("https://news.google.com/rss/search");
+  endpoint.search = new URLSearchParams({
+    q: buildGoogleNewsQuery(request),
+    hl: request.locale === "pt" ? "pt-PT" : "en-GB",
+    gl: request.locale === "pt" ? "PT" : "GB",
+    ceid: request.locale === "pt" ? "PT:pt-150" : "GB:en",
+  }).toString();
+  return endpoint;
 }
 
-function parseRssArticles(xml: string): NewsArticle[] {
-  return [...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)]
-    .map((match): NewsArticle | null => {
-      const itemXml = match[1];
-      const title = readTag(itemXml, "title");
-      const link = readTag(itemXml, "link");
-      const publishedTime = Date.parse(readTag(itemXml, "pubDate") ?? "");
-      const publishedAt = Number.isFinite(publishedTime) ? new Date(publishedTime).toISOString() : null;
-      if (!title || !link || !publishedAt) return null;
-
-      try {
-        const articleUrl = new URL(link);
-        if (articleUrl.protocol !== "http:" && articleUrl.protocol !== "https:") return null;
-        articleUrl.protocol = "https:";
-        return { title, link: articleUrl.toString(), publishedAt };
-      } catch {
-        return null;
-      }
-    })
-    .filter((article): article is NewsArticle => article !== null)
-    .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
-    .slice(0, 3);
+function buildBingEndpoint(request: NewsRequest): URL {
+  const endpoint = new URL("https://www.bing.com/news/search");
+  endpoint.search = new URLSearchParams({
+    q: buildBingNewsQuery(request),
+    format: "rss",
+    mkt: request.locale === "pt" ? "pt-PT" : "en-GB",
+  }).toString();
+  return endpoint;
 }
-async function fetchArticles(endpoint: URL, timeoutMs = 4_000): Promise<NewsArticle[]> {
+
+async function fetchRssArticles(endpoint: URL, publishedAfter: string, timeoutMs: number): Promise<NewsArticle[]> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -64,66 +58,99 @@ async function fetchArticles(endpoint: URL, timeoutMs = 4_000): Promise<NewsArti
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`News RSS request failed: ${response.status}`);
-    return parseRssArticles(await response.text());
+    return parseRssArticles(await response.text(), {
+      publishedAfter,
+      requireFireKeyword: true,
+      limit: 3,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function fetchArticles(endpoint: URL, request: NewsRequest, timeoutMs = 4_000): Promise<NewsArticle[]> {
+  try {
+    return await fetchRssArticles(endpoint, request.publishedAfter, timeoutMs);
   } catch (error) {
     if (endpoint.hostname !== "news.google.com") throw error;
 
     const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     console.warn(`Google News RSS unavailable; using direct RSS fallback (${reason})`);
-    const fallbackEndpoint = new URL("https://www.bing.com/news/search");
-    const fallbackQueryStart = endpoint.searchParams.get("q") ?? "wildfire";
-    const fallbackQuery = fallbackQueryStart
-      .replace(/[()'"]/g, " ")
-      .replace(/\bOR\b/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    fallbackEndpoint.search = new URLSearchParams({
-      q: fallbackQuery,
-      format: "rss",
-      mkt: endpoint.searchParams.get("gl") === "PT" ? "pt-PT" : "en-GB",
-    }).toString();
-    return fetchArticles(fallbackEndpoint, 6_000);
-  } finally {
-    clearTimeout(timeoutId);
+    return fetchRssArticles(buildBingEndpoint(request), request.publishedAfter, 6_000);
   }
 }
+
+function fallbackScopes(request: NewsRequest): NewsRequest[] {
+  const locationParts = request.location
+    .split(/[\/,]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const regionalTerm = request.region || locationParts.at(-1) || request.country || request.location;
+  const candidates: NewsRequest[] = [
+    {
+      ...request,
+      location: regionalTerm,
+      region: "",
+    },
+  ];
+  if (request.country) {
+    candidates.push({
+      ...request,
+      location: request.country,
+      region: "",
+      country: "",
+    });
+  }
+
+  const originalKey = JSON.stringify([request.location, request.region, request.country]);
+  const unique = new Map<string, NewsRequest>();
+  for (const candidate of candidates) {
+    const key = JSON.stringify([candidate.location, candidate.region, candidate.country]);
+    if (key !== originalKey) unique.set(key, candidate);
+  }
+  return [...unique.values()];
+}
+
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const location = url.searchParams.get("location")?.trim() ?? "";
-  const locale = url.searchParams.get("locale") === "pt" ? "pt" : "en";
+  const region = url.searchParams.get("region")?.trim() ?? "";
+  const country = url.searchParams.get("country")?.trim() ?? "";
+  const publishedAfter = url.searchParams.get("publishedAfter")?.trim() ?? "";
+  const rawLocale = url.searchParams.get("locale");
 
-  if (location.length < 2 || location.length > 120) {
-    return Response.json({ error: "Invalid location" }, { status: 400 });
-  }
+  if (location.length < 2 || location.length > 120) return invalidRequest("Invalid location");
+  if (region.length > 120 || country.length > 120) return invalidRequest("Invalid geography");
+  if (!Number.isFinite(Date.parse(publishedAfter))) return invalidRequest("Invalid publishedAfter");
+  if (rawLocale !== null && rawLocale !== "pt" && rawLocale !== "en") return invalidRequest("Invalid locale");
 
-  const endpoint = new URL("https://news.google.com/rss/search");
-  endpoint.search = new URLSearchParams({
-    q: `("wildfire" OR "fire") "${location}"`,
-    hl: locale === "pt" ? "pt-PT" : "en-GB",
-    gl: locale === "pt" ? "PT" : "GB",
-    ceid: locale === "pt" ? "PT:pt-150" : "GB:en",
-  }).toString();
+  const newsRequest: NewsRequest = {
+    location,
+    region,
+    country,
+    publishedAfter,
+    locale: rawLocale === "pt" ? "pt" : "en",
+  };
 
   try {
-    let articles = await fetchArticles(endpoint);
+    let articles = await fetchArticles(buildGoogleEndpoint(newsRequest), newsRequest);
     if (articles.length === 0) {
-      const fallbackEndpoint = new URL(endpoint);
-      const regionalTerm = location.split(",")[0].split("/").at(-1)?.trim() || location;
-      fallbackEndpoint.searchParams.set("q", `${locale === "pt" ? "incêndio" : "wildfire"} ${regionalTerm}`);
-      articles = await fetchArticles(fallbackEndpoint);
+      const fallbackRequests = fallbackScopes(newsRequest);
+      for (const fallbackRequest of fallbackRequests) {
+        articles = await fetchArticles(buildGoogleEndpoint(fallbackRequest), fallbackRequest);
+        if (articles.length > 0) break;
+      }
 
-      if (articles.length === 0 && locale === "pt") {
-        fallbackEndpoint.searchParams.set("q", `wildfire ${regionalTerm}`);
-        fallbackEndpoint.searchParams.set("hl", "en-US");
-        fallbackEndpoint.searchParams.set("gl", "US");
-        fallbackEndpoint.searchParams.set("ceid", "US:en");
-        articles = await fetchArticles(fallbackEndpoint);
+      if (articles.length === 0 && newsRequest.locale === "pt") {
+        const englishScope = fallbackRequests.at(-1) ?? newsRequest;
+        const englishRequest = { ...englishScope, locale: "en" as const };
+        articles = await fetchArticles(buildGoogleEndpoint(englishRequest), englishRequest);
       }
     }
 
     return Response.json(
-      { location, articles },
-      { headers: { "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=3600" } },
+      { location, articles: articles.slice(0, 3) },
+      { headers: NEWS_CACHE_HEADERS },
     );
   } catch (error) {
     const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
