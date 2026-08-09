@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import Map, { AttributionControl, Layer, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
+import Map, { AttributionControl, Layer, ScaleControl, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { AddLayerObject, FilterSpecification, GeoJSONSource, Map as MapLibreMap, MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
 import { eventsToClusterSelection, eventToSelection } from "@/lib/wildfire/selection";
-import { selectedEventToPolygonGeoJSON } from "@/lib/wildfire/geojson";
 import { eventsToTemporalMarkerGeoJSON } from "@/lib/wildfire/temporal";
+import { eventsToViirsPixelGeoJSON } from "@/lib/wildfire/viirs";
 import { SEVERITY_COLOR } from "@/lib/wildfire/colors";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
 import {
@@ -34,31 +34,27 @@ const SATELLITE_ATTRIBUTION = "© Esri, Maxar, Earthstar Geographics, and the GI
 
 const MARKER_LAYER_ID = "fire-markers";
 const MARKER_HIT_AREA_LAYER_ID = "fire-marker-hit-area";
-const POLYGON_FILL_LAYER_ID = "fire-polygons-fill";
 const CLUSTER_LAYER_ID = "major-fire-events";
 const CLUSTER_GLOW_LAYER_ID = "major-fire-events-glow";
 const CLUSTER_HIT_AREA_LAYER_ID = "major-fire-events-hit-area";
 const CLUSTER_COUNT_LAYER_ID = "major-fire-events-count";
 const MARKER_SOURCE_ID = "fire-markers-src";
-const SELECTED_MARKER_SOURCE_ID = "selected-fire-marker-src";
-const SELECTED_MARKER_GLOW_LAYER_ID = "selected-fire-marker-glow";
-const SELECTED_MARKER_RING_LAYER_ID = "selected-fire-marker-ring";
-// Every layer whose features carry a `fireId` property — clicking or
-// hovering any of them (marker, burned-area fill, or heatmap core) selects
-// the fire, not just the small marker dot.
+const SELECTED_PIXEL_SOURCE_ID = "selected-viirs-pixels-src";
+const SELECTED_PIXEL_FILL_LAYER_ID = "selected-viirs-pixels-fill";
+const SELECTED_PIXEL_BORDER_LAYER_ID = "selected-viirs-pixels-border";
+// Cluster and marker hit areas retain broad pointer targets while selected
+// detections render separately as sensor-sized polygons.
 const INTERACTIVE_LAYER_IDS = [
   CLUSTER_HIT_AREA_LAYER_ID,
   CLUSTER_LAYER_ID,
   MARKER_HIT_AREA_LAYER_ID,
   MARKER_LAYER_ID,
-  POLYGON_FILL_LAYER_ID,
 ];
 const INTERACTION_PRIORITY = [
   CLUSTER_HIT_AREA_LAYER_ID,
   CLUSTER_LAYER_ID,
   MARKER_HIT_AREA_LAYER_ID,
   MARKER_LAYER_ID,
-  POLYGON_FILL_LAYER_ID,
 ] as const;
 const POINTER_QUERY_RADIUS = 12;
 
@@ -80,6 +76,16 @@ function pickInteractiveFeature(features: readonly InteractiveFeature[] | undefi
     if (match) return match;
   }
   return null;
+}
+
+function getUnselectedMarkerFilter(selectedEventIds: readonly string[]): FilterSpecification {
+  if (selectedEventIds.length === 0) return ["!", ["has", "point_count"]];
+
+  return [
+    "all",
+    ["!", ["has", "point_count"]],
+    ["!", ["in", ["get", "fireId"], ["literal", [...selectedEventIds]]]],
+  ];
 }
 
 function getCameraPadding(panelOpen: boolean) {
@@ -230,23 +236,14 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   const [isHoveringInteractiveFeature, setIsHoveringInteractiveFeature] = useState(false);
 
   const selectionRequestRef = useRef(0);
-  const polygonData = useMemo(
-    () => selectedEventToPolygonGeoJSON(perimeterEvents, selectedFire?.kind === "point" ? selectedFire.id : null),
-    [perimeterEvents, selectedFire?.id, selectedFire?.kind],
+  const selectedFireEventIds = selectedFire?.eventIds;
+  const selectedPixelData = useMemo(
+    () => selectedFireEventIds
+      ? eventsToViirsPixelGeoJSON(perimeterEvents, selectedFireEventIds)
+      : { type: "FeatureCollection" as const, features: [] },
+    [perimeterEvents, selectedFireEventIds],
   );
   const markerData = useMemo(() => eventsToTemporalMarkerGeoJSON(events, timelineHour), [events, timelineHour]);
-  const selectedMarkerData: GeoJSON.FeatureCollection = (
-    selectedFire?.kind === "point"
-      ? {
-          type: "FeatureCollection",
-          features: [{
-            type: "Feature",
-            geometry: { type: "Point", coordinates: [selectedFire.location.lng, selectedFire.location.lat] },
-            properties: { fireId: selectedFire.id },
-          }],
-      }
-      : { type: "FeatureCollection", features: [] }
-  );
 
   const eventById = useMemo(() => new globalThis.Map(events.map((event) => [event.id, event])), [events]);
   const mapStyleUrl = getMapStyleUrl(theme, basemapMode);
@@ -408,60 +405,10 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
       onLoad={handleLoad}
     >
       <AttributionControl key={basemapMode} compact position="bottom-left" />
+      <ScaleControl position="bottom-right" unit="metric" />
       {/* Satellite raster is managed imperatively beneath vector overlays. */}
 
       {/* Native clusters replace the former 6,000-point macro heatmap. */}
-
-      <Source id="fire-polygons-src" type="geojson" data={polygonData}>
-        <Layer
-          id={POLYGON_FILL_LAYER_ID}
-          type="fill"
-          paint={{
-            "fill-color": [
-              "match",
-              ["get", "severity"],
-              "extreme", "#7f1d1d",
-              "high", "#991b1b",
-              "moderate", SEVERITY_COLOR.moderate,
-              SEVERITY_COLOR.low,
-            ],
-            "fill-opacity": 0.32,
-          }}
-        />
-        {/* Soft blurred underlay gives the burned-area border a glowing edge. */}
-        <Layer
-          id="fire-polygons-line-glow"
-          type="line"
-          paint={{
-            "line-color": [
-              "match",
-              ["get", "severity"],
-              "extreme", SEVERITY_COLOR.extreme,
-              "high", SEVERITY_COLOR.high,
-              "moderate", SEVERITY_COLOR.moderate,
-              SEVERITY_COLOR.low,
-            ],
-            "line-width": 6,
-            "line-blur": 4,
-            "line-opacity": 0.5,
-          }}
-        />
-        <Layer
-          id="fire-polygons-line"
-          type="line"
-          paint={{
-            "line-color": [
-              "match",
-              ["get", "severity"],
-              "extreme", "#ff3b3b",
-              "high", "#ff3b3b",
-              "moderate", SEVERITY_COLOR.moderate,
-              SEVERITY_COLOR.low,
-            ],
-            "line-width": 2,
-          }}
-        />
-      </Source>
 
       <Source
         id={MARKER_SOURCE_ID}
@@ -557,15 +504,11 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={MARKER_LAYER_ID}
           type="circle"
-          filter={["!", ["has", "point_count"]]}
+          filter={getUnselectedMarkerFilter(selectedFireEventIds ?? [])}
           paint={{
             "circle-radius": [
               "*",
-              [
-                "case",
-                ["==", ["get", "fireId"], selectedFire?.kind === "point" ? selectedFire.id : ""], 11,
-                7,
-              ],
+              7,
               ["coalesce", ["get", "temporalRadiusScale"], 1],
             ],
             "circle-color": [
@@ -576,39 +519,41 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
               "moderate", SEVERITY_COLOR.moderate,
               SEVERITY_COLOR.low,
             ],
-            "circle-stroke-width": [
-              "case",
-              ["==", ["get", "fireId"], selectedFire?.kind === "point" ? selectedFire.id : ""], 3,
-              1.5,
-            ],
+            "circle-stroke-width": 1.5,
             "circle-stroke-color": "#ffffff",
             "circle-opacity": ["coalesce", ["get", "temporalOpacity"], 1],
           }}
         />
       </Source>
 
-      {/* This source is intentionally separate from the filtered, clustered
-          marker source so selection stays visible during timeline playback. */}
-      <Source id={SELECTED_MARKER_SOURCE_ID} type="geojson" data={selectedMarkerData}>
+      {/* Selected raw detections become native VIIRS footprints. This source
+          is separate from the timeline-filtered marker source so the grid
+          remains visible while the global chronology is scrubbed. */}
+      <Source id={SELECTED_PIXEL_SOURCE_ID} type="geojson" data={selectedPixelData}>
         <Layer
-          id={SELECTED_MARKER_GLOW_LAYER_ID}
-          type="circle"
+          id={SELECTED_PIXEL_FILL_LAYER_ID}
+          type="fill"
           paint={{
-            "circle-radius": 19,
-            "circle-color": "#ef4444",
-            "circle-opacity": 0.16,
-            "circle-blur": 0.7,
+            "fill-color": [
+              "interpolate", ["linear"], ["coalesce", ["get", "frp"], 0],
+              0, "#fffef3",
+              30, "#fff0a3",
+              31, "#ff8a00",
+              79, "#ff7800",
+              80, "#dc143c",
+              150, "#7f1d1d",
+            ],
+            "fill-opacity": 0.9,
+            "fill-antialias": false,
           }}
         />
         <Layer
-          id={SELECTED_MARKER_RING_LAYER_ID}
-          type="circle"
+          id={SELECTED_PIXEL_BORDER_LAYER_ID}
+          type="line"
           paint={{
-            "circle-radius": 15,
-            "circle-color": "rgba(239,68,68,0.08)",
-            "circle-opacity": 0.9,
-            "circle-stroke-color": "#ffffff",
-            "circle-stroke-width": 3,
+            "line-color": "rgba(10, 13, 18, 0.88)",
+            "line-width": 1,
+            "line-opacity": 0.8,
           }}
         />
       </Source>

@@ -132,6 +132,18 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
     });
   }
 
+  function formatUtcDateTime(iso: string): string {
+    return new Date(iso).toLocaleString(DATE_LOCALE[locale], {
+      timeZone: "UTC",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+
   return (
     <div className="flex h-full flex-col gap-4 p-4 sm:p-5">
       <button
@@ -144,6 +156,41 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
         </svg>
         {t.fireDetail.backToGlobalMap}
       </button>
+
+      <div
+        data-testid="selected-fire-technical-readout"
+        className="rounded-xl border border-red-500/20 bg-neutral-950/[0.04] p-3 dark:bg-black/20"
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <div className="min-w-0">
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
+              {t.fireDetail.locationReadoutLabel}
+            </p>
+            <p className="mt-1 truncate text-xs font-medium text-foreground/85">
+              {locationName ?? fallbackLocationName}
+            </p>
+          </div>
+          <div className="min-w-0 text-right">
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
+              {t.fireDetail.dateTimeUtcLabel}
+            </p>
+            <p className="mt-1 font-mono text-xs font-medium tabular-nums text-foreground/85">
+              {formatUtcDateTime(selection.detectedAt)}
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 border-t border-red-500/15 pt-3">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
+            {t.fireDetail.burnScarReadoutLabel}
+          </p>
+          <p className="mt-1 font-mono text-xl font-semibold leading-none tabular-nums text-foreground">
+            {formatThousands(estimatedAreaHectares)} <span className="text-xs font-medium text-foreground/55">ha</span>
+          </p>
+          <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-red-700/70 dark:text-red-300/70">
+            {t.fireDetail.viirsPixelReadoutLabel}
+          </p>
+        </div>
+      </div>
 
       <div className="flex items-start justify-between gap-3">
         <div>
