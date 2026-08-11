@@ -167,7 +167,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
           {t.fireDetail.liveConditionsTitle}
         </h3>
         {!weatherFailed && (
-          <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/55">
+          <span className="flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tabular-nums tracking-[0.08em] text-foreground/55">
             <span className="h-1.5 w-1.5 rounded-full bg-red-400 shadow-[0_0_8px_rgba(239,68,68,0.7)] motion-safe:animate-pulse" />
             {t.fireDetail.liveLabel}
           </span>
@@ -239,7 +239,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
                 >
                   <span className="min-w-0">
                     <span className="line-clamp-2 block text-xs font-medium leading-5 text-foreground/85">{article.title}</span>
-                    <time dateTime={article.publishedAt} className="mt-1 block font-mono text-[11px] uppercase tracking-[0.06em] text-foreground/40">{new Date(article.publishedAt).toLocaleDateString(locale === "pt" ? "pt-PT" : "en-GB")}</time>
+                    <time dateTime={article.publishedAt} className="mt-1 block font-mono text-[11px] uppercase tabular-nums tracking-[0.06em] text-foreground/40">{new Date(article.publishedAt).toLocaleDateString(locale === "pt" ? "pt-PT" : "en-GB")}</time>
                   </span>
                   <ExternalLink aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/35 transition-colors group-hover:text-red-400" />
                 </a>
@@ -347,7 +347,7 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/55">{t.fireDetail.aqiLabel}</p>
           <p className={`mt-1 font-mono text-3xl font-semibold leading-none tabular-nums ${tone.text}`}>{reading.aqi}</p>
         </div>
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-semibold ${tone.text}`}>
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 font-mono text-[11px] font-semibold tabular-nums ${tone.text}`}>
           <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
           {tone.label}
         </span>
@@ -362,7 +362,7 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
           <dd className="mt-1 truncate font-medium text-foreground/80">{reading.stationName ?? t.fireDetail.airQualityNearestMonitor}</dd>
         </div>
       </dl>
-      <p className="mt-3 text-[11px] text-foreground/50">
+      <p className="mt-3 font-mono text-[11px] tabular-nums text-foreground/50">
         {reading.distanceKm === null ? t.fireDetail.airQualityDistanceUnknown : `${reading.distanceKm.toFixed(1)} km`} · {new Date(reading.observedAt).toLocaleString(locale === "pt" ? "pt-PT" : "en-GB")}
       </p>
     </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Map, { AttributionControl, Layer, ScaleControl, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
-import type { AddLayerObject, FilterSpecification, GeoJSONSource, Map as MapLibreMap, MapLibreEvent } from "maplibre-gl";
+import type { FilterSpecification, GeoJSONSource, Map as MapLibreMap, MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
 import { eventsToClusterSelection, eventToSelection } from "@/lib/wildfire/selection";
@@ -12,26 +12,15 @@ import { SEVERITY_COLOR } from "@/lib/wildfire/colors";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
 import {
   DARK_BACKGROUND,
-  SATELLITE_BACKGROUND,
   getCameraPadding as getMapCameraPadding,
   getMapStyleUrl,
-  getSatelliteLayerPlan,
   observeStyleReady,
 } from "./mapPresentation";
+import { syncSatelliteLayers } from "./satelliteLayers";
 
 // Free, no-API-key vector basemaps from CARTO — dark-matter fits the cinematic
 // dark theme, positron is the light-mode counterpart. Attribution is baked
 // into the style JSON already.
-// Free, no-API-key satellite imagery. It remains a stable instrument surface
-// across UI themes; FIRMS overlays and vector labels stay above the raster.
-const SATELLITE_TILE_URL =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-const SATELLITE_SOURCE_ID = "satellite-src";
-const SATELLITE_LAYER_ID = "satellite-layer";
-const SATELLITE_BACKGROUND_LAYER_ID = "satellite-background";
-const SATELLITE_OCEAN_MASK_LAYER_ID = "satellite-ocean-mask";
-const SATELLITE_ATTRIBUTION = "© Esri, Maxar, Earthstar Geographics, and the GIS User Community";
-
 const MARKER_LAYER_ID = "fire-markers";
 const MARKER_HIT_AREA_LAYER_ID = "fire-marker-hit-area";
 const CLUSTER_LAYER_ID = "major-fire-events";
@@ -117,16 +106,6 @@ function flyToLocation(
   });
 }
 
-function moveLayerBefore(map: MapLibreMap, layerId: string, beforeLayerId: string | undefined): void {
-  if (!beforeLayerId || !map.getLayer(layerId)) return;
-  const layers = map.getStyle().layers ?? [];
-  const currentIndex = layers.findIndex((layer) => layer.id === layerId);
-  const beforeIndex = layers.findIndex((layer) => layer.id === beforeLayerId);
-  if (currentIndex !== -1 && beforeIndex !== -1 && currentIndex !== beforeIndex - 1) {
-    map.moveLayer(layerId, beforeLayerId);
-  }
-}
-
 function writeMapCameraState(
   map: MapLibreMap,
   padding: { top: number; right: number; bottom: number; left: number },
@@ -135,86 +114,6 @@ function writeMapCameraState(
   const mapRoot = map.getContainer().closest<HTMLElement>("[data-map-style-url]");
   mapRoot?.setAttribute("data-map-camera-padding", JSON.stringify(padding));
   mapRoot?.setAttribute("data-map-camera-action", action);
-}
-
-function syncSatelliteLayer(map: MapLibreMap, mode: BasemapMode): void {
-  if (mode === "plain") {
-    if (map.getLayer(SATELLITE_LAYER_ID)) map.removeLayer(SATELLITE_LAYER_ID);
-    if (map.getLayer(SATELLITE_OCEAN_MASK_LAYER_ID)) map.removeLayer(SATELLITE_OCEAN_MASK_LAYER_ID);
-    if (map.getLayer(SATELLITE_BACKGROUND_LAYER_ID)) map.removeLayer(SATELLITE_BACKGROUND_LAYER_ID);
-    if (map.getSource(SATELLITE_SOURCE_ID)) map.removeSource(SATELLITE_SOURCE_ID);
-    return;
-  }
-
-  const initialPlan = getSatelliteLayerPlan(map.getStyle().layers ?? []);
-  if (!map.getLayer(SATELLITE_BACKGROUND_LAYER_ID)) {
-    map.addLayer({
-      id: SATELLITE_BACKGROUND_LAYER_ID,
-      type: "background",
-      paint: { "background-color": SATELLITE_BACKGROUND },
-    }, initialPlan.backgroundBeforeLayerId);
-  } else {
-    map.setPaintProperty(SATELLITE_BACKGROUND_LAYER_ID, "background-color", SATELLITE_BACKGROUND);
-  }
-  moveLayerBefore(map, SATELLITE_BACKGROUND_LAYER_ID, initialPlan.backgroundBeforeLayerId);
-
-  if (!map.getSource(SATELLITE_SOURCE_ID)) {
-    map.addSource(SATELLITE_SOURCE_ID, {
-      type: "raster",
-      tiles: [SATELLITE_TILE_URL],
-      tileSize: 256,
-      attribution: SATELLITE_ATTRIBUTION,
-    });
-  }
-
-  if (!map.getLayer(SATELLITE_LAYER_ID)) {
-    map.addLayer({
-      id: SATELLITE_LAYER_ID,
-      type: "raster",
-      source: SATELLITE_SOURCE_ID,
-      paint: {
-        "raster-brightness-max": 0.64,
-        "raster-saturation": -0.28,
-        "raster-contrast": 0.16,
-        "raster-opacity": 0.88,
-      },
-    }, getSatelliteLayerPlan(map.getStyle().layers ?? []).overlayBeforeLayerId);
-  } else {
-    moveLayerBefore(
-      map,
-      SATELLITE_LAYER_ID,
-      getSatelliteLayerPlan(map.getStyle().layers ?? []).overlayBeforeLayerId,
-    );
-  }
-
-  const layerPlan = getSatelliteLayerPlan(map.getStyle().layers ?? []);
-  if (layerPlan.oceanLayer) {
-    const oceanMask: AddLayerObject = {
-      id: SATELLITE_OCEAN_MASK_LAYER_ID,
-      type: "fill",
-      source: layerPlan.oceanLayer.source,
-      ...(layerPlan.oceanLayer.sourceLayer ? { "source-layer": layerPlan.oceanLayer.sourceLayer } : {}),
-      ...(layerPlan.oceanLayer.filter !== undefined
-        ? { filter: layerPlan.oceanLayer.filter as FilterSpecification }
-        : {}),
-      paint: {
-        "fill-color": SATELLITE_BACKGROUND,
-        "fill-opacity": 1,
-      },
-    };
-    if (!map.getLayer(SATELLITE_OCEAN_MASK_LAYER_ID)) {
-      map.addLayer(oceanMask, layerPlan.overlayBeforeLayerId);
-    } else {
-      map.setPaintProperty(SATELLITE_OCEAN_MASK_LAYER_ID, "fill-color", SATELLITE_BACKGROUND);
-      map.setPaintProperty(SATELLITE_OCEAN_MASK_LAYER_ID, "fill-opacity", 1);
-      if (layerPlan.oceanLayer.filter !== undefined) {
-        map.setFilter(SATELLITE_OCEAN_MASK_LAYER_ID, layerPlan.oceanLayer.filter as FilterSpecification);
-      }
-      moveLayerBefore(map, SATELLITE_OCEAN_MASK_LAYER_ID, layerPlan.overlayBeforeLayerId);
-    }
-  } else if (map.getLayer(SATELLITE_OCEAN_MASK_LAYER_ID)) {
-    map.removeLayer(SATELLITE_OCEAN_MASK_LAYER_ID);
-  }
 }
 
 interface FireMapProps {
@@ -321,7 +220,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     if (basemapMode === "plain" && map.getLayer("background")) {
       map.setPaintProperty("background", "background-color", theme === "dark" ? DARK_BACKGROUND : "#f5f6f7");
     }
-    syncSatelliteLayer(map, basemapMode);
+    syncSatelliteLayers(map, basemapMode);
   }, [basemapMode, theme]);
 
   const handleLoad = useCallback(

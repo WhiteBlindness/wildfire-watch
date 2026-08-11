@@ -1,9 +1,10 @@
-import { destination, point } from "@turf/turf";
+import { bbox, bboxPolygon, buffer, point } from "@turf/turf";
 import type { HeatmapPoint, WildfireEvent } from "./types";
 
 /** Native VIIRS 375 m nominal ground sampling distance. */
 export const VIIRS_PIXEL_SIDE_METERS = 375;
-const VIIRS_HALF_PIXEL_SIDE_KILOMETERS = VIIRS_PIXEL_SIDE_METERS / 2 / 1_000;
+const VIIRS_HALF_PIXEL_SIDE_METERS = VIIRS_PIXEL_SIDE_METERS / 2;
+const MAX_MAPLIBRE_LATITUDE = 85.0511287798066;
 
 type PixelProperties = {
   fireId: string;
@@ -13,13 +14,15 @@ type PixelProperties = {
   confidencePct: number;
 };
 
+type PixelGeometry = GeoJSON.Polygon | GeoJSON.MultiPolygon;
+
 function isValidHeatmapPoint(rawPoint: HeatmapPoint): boolean {
   return Number.isFinite(rawPoint.lng)
     && Number.isFinite(rawPoint.lat)
     && rawPoint.lng >= -180
     && rawPoint.lng <= 180
-    && rawPoint.lat >= -90
-    && rawPoint.lat <= 90;
+    && rawPoint.lat >= -MAX_MAPLIBRE_LATITUDE
+    && rawPoint.lat <= MAX_MAPLIBRE_LATITUDE;
 }
 
 function getFireFrpMw(event: WildfireEvent, rawPoint: HeatmapPoint): number {
@@ -34,28 +37,48 @@ function getFireFrpMw(event: WildfireEvent, rawPoint: HeatmapPoint): number {
   return Math.max(0, fallbackIntensity * 200);
 }
 
-function makePixelPolygon(rawPoint: HeatmapPoint): GeoJSON.Polygon {
+function splitAntimeridianBounds(bounds: GeoJSON.BBox): GeoJSON.MultiPolygon {
+  const [west, south, east, north] = bounds;
+  const parts = east > 180
+    ? [
+        bboxPolygon([west, south, 180, north]).geometry.coordinates,
+        bboxPolygon([-180, south, east - 360, north]).geometry.coordinates,
+      ]
+    : [
+        bboxPolygon([west + 360, south, 180, north]).geometry.coordinates,
+        bboxPolygon([-180, south, east, north]).geometry.coordinates,
+      ];
+
+  return { type: "MultiPolygon", coordinates: parts };
+}
+
+function makePixelPolygon(rawPoint: HeatmapPoint): PixelGeometry {
   const center = point([rawPoint.lng, rawPoint.lat]);
-  const north = destination(center, VIIRS_HALF_PIXEL_SIDE_KILOMETERS, 0, { units: "kilometers" });
-  const east = destination(center, VIIRS_HALF_PIXEL_SIDE_KILOMETERS, 90, { units: "kilometers" });
-  const south = destination(center, VIIRS_HALF_PIXEL_SIDE_KILOMETERS, 180, { units: "kilometers" });
-  const west = destination(center, VIIRS_HALF_PIXEL_SIDE_KILOMETERS, 270, { units: "kilometers" });
+  const pixelBuffer = buffer(center, VIIRS_HALF_PIXEL_SIDE_METERS, { units: "meters" });
+  if (!pixelBuffer || pixelBuffer.geometry.type !== "Polygon") {
+    throw new Error(`Unable to construct VIIRS pixel buffer at ${rawPoint.lng}, ${rawPoint.lat}`);
+  }
 
-  const [eastLng] = east.geometry.coordinates;
-  const [, northLat] = north.geometry.coordinates;
-  const [westLng] = west.geometry.coordinates;
-  const [, southLat] = south.geometry.coordinates;
-
-  return {
-    type: "Polygon",
-    coordinates: [[
-      [westLng, southLat],
-      [eastLng, southLat],
-      [eastLng, northLat],
-      [westLng, northLat],
-      [westLng, southLat],
-    ]],
-  };
+  const polygonBuffer = pixelBuffer as GeoJSON.Feature<GeoJSON.Polygon>;
+  const directBounds = bbox(polygonBuffer);
+  const crossesAntimeridian = directBounds[2] - directBounds[0] > 180;
+  const boundedBuffer: GeoJSON.Feature<GeoJSON.Polygon> = crossesAntimeridian
+    ? {
+        ...polygonBuffer,
+        geometry: {
+          ...polygonBuffer.geometry,
+          coordinates: polygonBuffer.geometry.coordinates.map((ring) => ring.map(([lng, lat]) => {
+            const delta = lng - rawPoint.lng;
+            const longitude = delta > 180 ? lng - 360 : delta < -180 ? lng + 360 : lng;
+            return [longitude, lat];
+          })),
+        },
+      }
+    : polygonBuffer;
+  const pixelBounds = crossesAntimeridian ? bbox(boundedBuffer) : directBounds;
+  return crossesAntimeridian
+    ? splitAntimeridianBounds(pixelBounds)
+    : bboxPolygon(pixelBounds).geometry;
 }
 
 /**
@@ -66,11 +89,11 @@ function makePixelPolygon(rawPoint: HeatmapPoint): GeoJSON.Polygon {
 export function eventsToViirsPixelGeoJSON(
   events: WildfireEvent[],
   selectedEventIds: readonly string[],
-): GeoJSON.FeatureCollection<GeoJSON.Polygon, PixelProperties> {
+): GeoJSON.FeatureCollection<PixelGeometry, PixelProperties> {
   const selectedIds = new Set(selectedEventIds);
   if (selectedIds.size === 0) return { type: "FeatureCollection", features: [] };
 
-  const features = events.flatMap<GeoJSON.Feature<GeoJSON.Polygon, PixelProperties>>((event) => {
+  const features = events.flatMap<GeoJSON.Feature<PixelGeometry, PixelProperties>>((event) => {
     if (!selectedIds.has(event.id)) return [];
 
     return event.heatmapPoints

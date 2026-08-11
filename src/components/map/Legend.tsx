@@ -16,7 +16,7 @@ export default function Legend() {
       </p>
       <ul className="flex flex-col gap-1">
         {ORDER.map((severity) => (
-          <li key={severity} className="flex items-center gap-2 text-xs text-foreground/80">
+          <li key={severity} className="flex items-center gap-2 font-mono text-xs text-foreground/80">
             <span
               className="h-2.5 w-2.5 rounded-full ring-1 ring-white/30"
               style={{ backgroundColor: SEVERITY_COLOR[severity] }}

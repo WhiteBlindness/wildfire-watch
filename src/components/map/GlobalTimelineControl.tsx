@@ -85,7 +85,7 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
             style={{ "--timeline-progress": timelineProgress } as CSSProperties}
             className="timeline-slider block h-6 w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/80"
           />
-          <div aria-hidden="true" className="mt-0.5 flex justify-between text-[11px] font-medium uppercase tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+          <div aria-hidden="true" className="mt-0.5 flex justify-between font-mono text-[11px] font-medium uppercase tabular-nums tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
             <span>T-72h</span>
             <span>T-36h</span>
             <span>{t.timeline.now}</span>
@@ -104,7 +104,7 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
         }`}
       >
         <span className={`h-2 w-2 rounded-full ${isPlaying ? "animate-pulse bg-red-500" : "bg-neutral-400 dark:bg-neutral-500"}`} aria-hidden="true" />
-        <span>{currentLabel}</span>
+        <span className="font-mono tabular-nums">{currentLabel}</span>
         <Maximize2 aria-hidden="true" className="h-3.5 w-3.5" />
       </button>
     </section>

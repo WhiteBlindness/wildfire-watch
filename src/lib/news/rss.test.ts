@@ -3,7 +3,9 @@ import test from "node:test";
 import {
   buildBingNewsQuery,
   buildGoogleNewsQuery,
+  buildGoogleNewsQueries,
   decodeXml,
+  extractVillage,
   filterRssArticles,
   getEffectiveNewsCutoff,
   parseRssArticles,
@@ -67,24 +69,76 @@ test("requires a fire keyword across title or description when requested", () =>
   assert.deepEqual(articles.map((article) => article.link), ["https://example.com/1", "https://example.com/3"]);
 });
 
-test("builds equivalent scoped Google and Bing queries with a relaxed cutoff", () => {
+test("extracts the village from composite location labels", () => {
+  assert.equal(
+    extractVillage("Pardieiros / Arganil, Coimbra, Portugal", "Coimbra", "Portugal"),
+    "Pardieiros",
+  );
+  assert.equal(
+    extractVillage("Covilhã/Castelo Branco, Portugal", "Castelo Branco", "Portugal"),
+    "Covilhã",
+  );
+  assert.equal(
+    extractVillage("Covilhã/Castelo Branco, Portugal", "Covilhã", "Portugal"),
+    "Covilhã",
+  );
+  assert.equal(extractVillage("Leiria", "Leiria", "Portugal"), "Leiria");
+});
+
+test("builds the exact three Google News relaxation tiers", () => {
   const input = {
-    location: "Covilhã/Castelo Branco, Portugal",
-    region: "Covilhã",
+    location: "Pardieiros / Arganil, Coimbra, Portugal",
+    region: "Coimbra",
     country: "Portugal",
     startedAt: STARTED_AT,
   };
-  const google = buildGoogleNewsQuery(input);
-  const bing = buildBingNewsQuery(input);
 
-  assert.ok(google.includes("(wildfire OR fire OR incêndio)"));
-  assert.equal(google, '(wildfire OR fire OR incêndio) "Covilhã" after:2026-07-30');
-  assert.ok(!google.includes("Castelo Branco"));
-  assert.ok(!google.includes('"Portugal"'));
-  assert.equal(bing, google);
+  assert.deepEqual(buildGoogleNewsQueries(input), [
+    '"Pardieiros" "Coimbra" "Portugal" (wildfire OR fire) when:3d',
+    '"Coimbra" "Portugal" (wildfire OR fire) when:7d',
+    '"Portugal" (wildfire OR fire)',
+  ]);
+  assert.equal(buildGoogleNewsQuery(input), buildGoogleNewsQueries(input)[0]);
+  assert.equal(buildBingNewsQuery(input), buildGoogleNewsQueries(input)[0]);
 });
 
 test("decodes XML entities and rejects an invalid cutoff", () => {
   assert.equal(decodeXml("A &amp; B &#x27; fogo"), "A & B ' fogo");
   assert.deepEqual(parseRssArticles("<rss><item></item></rss>", { publishedAfter: "nope" }), []);
+});
+
+test("caps RSS item scanning before sorting and limiting results", () => {
+  const items = Array.from({ length: 101 }, (_, index) => item({
+    title: `Fire update ${index}`,
+    link: `https://example.com/${index}`,
+    publishedAt: new Date(Date.UTC(2026, 7, 1) + index * 60_000).toISOString(),
+  }));
+
+  assert.deepEqual(
+    parseRssArticles(`<rss><channel>${items.join("")}</channel></rss>`).map((article) => article.link),
+    ["https://example.com/99", "https://example.com/98", "https://example.com/97"],
+  );
+});
+
+test("handles alternate RSS metadata and malformed optional fields safely", () => {
+  const xml = `<rss><channel>
+    <item><title>Atom wildfire</title><link>https://example.com/atom</link><published>2026-08-03T00:00:00.000Z</published><description><![CDATA[<p>Fire response</p>]]></description></item>
+    <item><title>Dated fire</title><link>https://example.com/dated</link><date>2026-08-02T00:00:00.000Z</date><encoded><![CDATA[<strong>Wildfire bulletin</strong>]]></encoded></item>
+    <item><title>Broken link fire</title><link>not-a-url</link><pubDate>2026-08-04T00:00:00.000Z</pubDate></item>
+  </channel></rss>`;
+
+  assert.deepEqual(
+    parseRssArticles(xml, { requireFireKeyword: true, maxItems: Number.NaN }).map((article) => article.link),
+    ["https://example.com/atom", "https://example.com/dated"],
+  );
+  assert.equal(decodeXml("&#x110000; &#1114112; &madeup;"), "&#x110000; &#1114112; &madeup;");
+});
+
+test("builds safe keyword-only tiers when geography is unavailable", () => {
+  assert.equal(extractVillage(null, null, null), null);
+  assert.deepEqual(buildGoogleNewsQueries({}), [
+    "(wildfire OR fire) when:3d",
+    "(wildfire OR fire) when:7d",
+    "(wildfire OR fire)",
+  ]);
 });

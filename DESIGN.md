@@ -38,6 +38,9 @@ typography:
     fontWeight: 600
     lineHeight: 1.2
     letterSpacing: "0.05em"
+  data:
+    fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
+    fontVariantNumeric: "tabular-nums"
 rounded:
   control: "6px"
   card: "8px"
@@ -120,14 +123,15 @@ The palette has exactly one job: make a fire's severity readable in under a seco
 ## Typography
 
 **Display/Body Font:** Geist Sans (with Arial, Helvetica, sans-serif fallback)
-**Mono Font:** Geist Mono (loaded, reserved for future data/coordinate readouts)
+**Mono Font:** JetBrains Mono (loaded for data, telemetry, coordinates, times, measurements, and operational badges)
 
-**Character:** A clean, geometric grotesque doing double duty as both the operator's dashboard face and the reading face — no separate decorative display font, because nothing on this surface is editorial.
+**Character:** Geist Sans remains the clean reading face for titles, labels, and prose. JetBrains Mono is the dedicated instrument face for changing operational data, keeping measurements and timestamps stable without turning ordinary copy into technical decoration.
 
 ### Hierarchy
 - **Title** (600, 1.125rem/18px, 1.4 line-height): fire name in the detail panel header — the single largest, boldest text on the page.
 - **Body** (400, 0.875rem/14px, 1.5 line-height): stat values, panel copy, chart tooltips.
 - **Label** (600, 0.6875rem/11px, uppercase, 0.05em tracking): section eyebrows ("MEIOS NO TERRENO", "SEVERIDADE", "EVOLUÇÃO DA ÁREA ARDIDA") and the ad-slot micro-label.
+- **Data** (JetBrains Mono, tabular numerals): coordinates, times, measurements, telemetry readouts, and status/severity/operational badges; prose and descriptive labels remain Geist Sans.
 
 ### Named Rules
 **The Uppercase Eyebrow Rule.** Any label introducing a data group is uppercase, tracked, and rendered at ~50% text opacity relative to body copy — it organizes without competing.

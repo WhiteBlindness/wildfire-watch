@@ -29,19 +29,13 @@ export interface CameraPaddingOptions {
 export interface StyleLayerLike {
   id: string;
   type: string;
-  source?: string;
+  source?: unknown;
   "source-layer"?: string;
   filter?: unknown;
 }
 
 export interface SatelliteLayerPlan {
-  backgroundBeforeLayerId?: string;
   overlayBeforeLayerId?: string;
-  oceanLayer?: {
-    source: string;
-    sourceLayer?: string;
-    filter?: unknown;
-  };
 }
 
 interface StyleReadyObservable {
@@ -87,33 +81,13 @@ export function getCameraPadding({
 }
 
 export function getSatelliteLayerPlan(layers: readonly StyleLayerLike[]): SatelliteLayerPlan {
-  // MapLibre renders layers in style order. Insert our final background after
-  // the provider's background layers but before the first geographic layer so
-  // #051937 remains the visible fallback beneath raster imagery.
-  const backgroundBeforeLayerId = layers.find((layer) => (
-    layer.id !== "satellite-background" && layer.type !== "background"
-  ))?.id;
+  // Preserve provider labels and administrative boundaries above imagery.
+  // The bathymetry layer is positioned relative to the raster itself.
   const overlayBeforeLayerId = layers.find((layer) => (
     layer.id !== "satellite-layer"
-    && layer.id !== "satellite-ocean-mask"
+    && layer.id !== "ocean-bathymetry"
     && (layer.type === "symbol" || (layer.type === "line" && /boundary|admin/i.test(layer.id)))
   ))?.id;
-  const waterLayer = layers.find((layer) => (
-    layer.type === "fill"
-    && layer.id !== "satellite-ocean-mask"
-    && typeof layer.source === "string"
-    && /water|ocean|marine/i.test(`${layer.id} ${layer["source-layer"] ?? ""}`)
-  ));
 
-  return {
-    backgroundBeforeLayerId,
-    overlayBeforeLayerId,
-    oceanLayer: waterLayer && waterLayer.source
-      ? {
-          source: waterLayer.source,
-          ...(waterLayer["source-layer"] ? { sourceLayer: waterLayer["source-layer"] } : {}),
-          ...(waterLayer.filter !== undefined ? { filter: waterLayer.filter } : {}),
-        }
-      : undefined,
-  };
+  return { overlayBeforeLayerId };
 }

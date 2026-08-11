@@ -1,6 +1,5 @@
 import {
-  buildBingNewsQuery,
-  buildGoogleNewsQuery,
+  buildGoogleNewsQueries,
   getEffectiveNewsCutoff,
   parseRssArticles,
   type NewsArticle,
@@ -12,42 +11,66 @@ export const dynamic = "force-dynamic";
 const NEWS_CACHE_HEADERS = {
   "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=3600",
 };
+const NEWS_ERROR_HEADERS = { "Cache-Control": "no-store" };
+const NEWS_REQUEST_TIMEOUT_MS = 10_000;
+const NEWS_RSS_MAX_BYTES = 256 * 1024;
 
 interface NewsRequest extends NewsQueryInput {
   location: string;
   region: string;
   country: string;
   startedAt: string;
-  effectiveCutoff: string;
   locale: "pt" | "en";
 }
 
-function invalidRequest(message: string): Response {
-  return Response.json({ error: message }, { status: 400 });
+class NewsRssHttpError extends Error {
+  constructor(status: number) {
+    super(`News RSS request failed: ${status}`);
+    this.name = "NewsRssHttpError";
+  }
 }
 
-function buildGoogleEndpoint(request: NewsRequest): URL {
-  const endpoint = new URL("https://news.google.com/rss/search");
-  endpoint.search = new URLSearchParams({
-    q: buildGoogleNewsQuery(request),
+class NewsRssPayloadTooLargeError extends Error {
+  constructor() {
+    super("News RSS payload exceeded the configured limit");
+    this.name = "NewsRssPayloadTooLargeError";
+  }
+}
+
+class NewsRequestDeadlineError extends Error {
+  constructor() {
+    super("News lookup exceeded the overall deadline");
+    this.name = "NewsRequestDeadlineError";
+  }
+}
+
+function invalidRequest(message: string): Response {
+  return Response.json({ error: message }, { status: 400, headers: NEWS_ERROR_HEADERS });
+}
+
+function buildProviderEndpoint(baseUrl: string, query: string, parameters: Record<string, string>): URL {
+  const endpoint = new URL(baseUrl);
+  const providerParameters = new URLSearchParams(parameters).toString();
+  endpoint.search = `q=${encodeURIComponent(query)}${providerParameters ? `&${providerParameters}` : ""}`;
+  return endpoint;
+}
+
+function buildGoogleEndpoint(request: NewsRequest, query: string): URL {
+  return buildProviderEndpoint("https://news.google.com/rss/search", query, {
     hl: request.locale === "pt" ? "pt-PT" : "en-GB",
     gl: request.locale === "pt" ? "PT" : "GB",
     ceid: request.locale === "pt" ? "PT:pt-150" : "GB:en",
-  }).toString();
-  return endpoint;
+  });
 }
 
-function buildBingEndpoint(request: NewsRequest): URL {
-  const endpoint = new URL("https://www.bing.com/news/search");
-  endpoint.search = new URLSearchParams({
-    q: buildBingNewsQuery(request),
+function buildBingEndpoint(request: NewsRequest, query: string): URL {
+  return buildProviderEndpoint("https://www.bing.com/news/search", query, {
     format: "rss",
     mkt: request.locale === "pt" ? "pt-PT" : "en-GB",
-  }).toString();
-  return endpoint;
+  });
 }
 
-async function fetchRssArticles(endpoint: URL, publishedAfter: string, timeoutMs: number): Promise<NewsArticle[]> {
+async function fetchRssArticles(endpoint: URL, timeoutMs: number): Promise<NewsArticle[]> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -59,9 +82,8 @@ async function fetchRssArticles(endpoint: URL, publishedAfter: string, timeoutMs
       },
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`News RSS request failed: ${response.status}`);
-    return parseRssArticles(await response.text(), {
-      publishedAfter,
+    if (!response.ok) throw new NewsRssHttpError(response.status);
+    return parseRssArticles(await readLimitedResponseText(response), {
       requireFireKeyword: true,
       limit: 3,
     });
@@ -70,47 +92,82 @@ async function fetchRssArticles(endpoint: URL, publishedAfter: string, timeoutMs
   }
 }
 
-async function fetchArticles(endpoint: URL, request: NewsRequest, timeoutMs = 4_000): Promise<NewsArticle[]> {
-  try {
-    return await fetchRssArticles(endpoint, request.effectiveCutoff, timeoutMs);
-  } catch (error) {
-    if (endpoint.hostname !== "news.google.com") throw error;
+async function readLimitedResponseText(response: Response): Promise<string> {
+  const contentLength = Number.parseInt(response.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(contentLength) && contentLength > NEWS_RSS_MAX_BYTES) {
+    throw new NewsRssPayloadTooLargeError();
+  }
 
-    const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-    console.warn(`Google News RSS unavailable; using direct RSS fallback (${reason})`);
-    return fetchRssArticles(buildBingEndpoint(request), request.effectiveCutoff, 6_000);
+  if (!response.body) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > NEWS_RSS_MAX_BYTES) {
+      throw new NewsRssPayloadTooLargeError();
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let totalBytes = 0;
+  let text = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return text + decoder.decode();
+    totalBytes += value.byteLength;
+    if (totalBytes > NEWS_RSS_MAX_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new NewsRssPayloadTooLargeError();
+    }
+    text += decoder.decode(value, { stream: true });
   }
 }
 
-function fallbackScopes(request: NewsRequest): NewsRequest[] {
-  const locationParts = request.location
-    .split(/[\/,]/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const regionalTerm = request.region || locationParts.at(-1) || request.country || request.location;
-  const candidates: NewsRequest[] = [
-    {
-      ...request,
-      location: regionalTerm,
-      region: "",
-    },
-  ];
-  if (request.country) {
-    candidates.push({
-      ...request,
-      location: request.country,
-      region: "",
-      country: "",
-    });
-  }
+interface TierFetchResult {
+  articles: NewsArticle[];
+  receivedResponse: boolean;
+  error?: unknown;
+}
 
-  const originalKey = JSON.stringify([request.location, request.region, request.country]);
-  const unique = new Map<string, NewsRequest>();
-  for (const candidate of candidates) {
-    const key = JSON.stringify([candidate.location, candidate.region, candidate.country]);
-    if (key !== originalKey) unique.set(key, candidate);
+function errorReason(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+function isNetworkError(error: unknown): boolean {
+  return error instanceof TypeError || (error instanceof Error && error.name === "AbortError");
+}
+
+function getRemainingTimeout(deadlineAt: number, providerTimeoutMs: number): number {
+  const remainingMs = deadlineAt - Date.now();
+  if (remainingMs <= 0) throw new NewsRequestDeadlineError();
+  return Math.min(providerTimeoutMs, remainingMs);
+}
+
+async function fetchQueryTier(
+  query: string,
+  request: NewsRequest,
+  deadlineAt: number,
+): Promise<TierFetchResult> {
+  try {
+    const articles = await fetchRssArticles(
+      buildGoogleEndpoint(request, query),
+      getRemainingTimeout(deadlineAt, 4_000),
+    );
+    return { articles, receivedResponse: true };
+  } catch (googleError) {
+    if (!isNetworkError(googleError)) throw googleError;
+    console.warn(`Google News RSS unavailable; using direct RSS fallback (${errorReason(googleError)})`);
+    try {
+      const articles = await fetchRssArticles(
+        buildBingEndpoint(request, query),
+        getRemainingTimeout(deadlineAt, 6_000),
+      );
+      return { articles, receivedResponse: true };
+    } catch (bingError) {
+      console.warn(`Bing News RSS fallback unavailable (${errorReason(bingError)})`);
+      return { articles: [], receivedResponse: false, error: bingError };
+    }
   }
-  return [...unique.values()];
 }
 
 export async function GET(request: Request): Promise<Response> {
@@ -123,8 +180,7 @@ export async function GET(request: Request): Promise<Response> {
 
   if (location.length < 2 || location.length > 120) return invalidRequest("Invalid location");
   if (region.length > 120 || country.length > 120) return invalidRequest("Invalid geography");
-  const effectiveCutoff = getEffectiveNewsCutoff(startedAt);
-  if (!effectiveCutoff) return invalidRequest("Invalid startedAt");
+  if (!getEffectiveNewsCutoff(startedAt)) return invalidRequest("Invalid startedAt");
   if (rawLocale !== null && rawLocale !== "pt" && rawLocale !== "en") return invalidRequest("Invalid locale");
 
   const newsRequest: NewsRequest = {
@@ -132,33 +188,33 @@ export async function GET(request: Request): Promise<Response> {
     region,
     country,
     startedAt,
-    effectiveCutoff,
     locale: rawLocale === "pt" ? "pt" : "en",
   };
 
   try {
-    let articles = await fetchArticles(buildGoogleEndpoint(newsRequest), newsRequest);
-    if (articles.length === 0) {
-      const fallbackRequests = fallbackScopes(newsRequest);
-      for (const fallbackRequest of fallbackRequests) {
-        articles = await fetchArticles(buildGoogleEndpoint(fallbackRequest), fallbackRequest);
-        if (articles.length > 0) break;
-      }
-
-      if (articles.length === 0 && newsRequest.locale === "pt") {
-        const englishScope = fallbackRequests.at(-1) ?? newsRequest;
-        const englishRequest = { ...englishScope, locale: "en" as const };
-        articles = await fetchArticles(buildGoogleEndpoint(englishRequest), englishRequest);
+    const deadlineAt = Date.now() + NEWS_REQUEST_TIMEOUT_MS;
+    let receivedResponse = false;
+    let lastError: unknown;
+    for (const query of buildGoogleNewsQueries(newsRequest)) {
+      const result = await fetchQueryTier(query, newsRequest, deadlineAt);
+      receivedResponse ||= result.receivedResponse;
+      lastError = result.error ?? lastError;
+      if (result.articles.length > 0) {
+        return Response.json(
+          { location, articles: result.articles.slice(0, 3) },
+          { headers: NEWS_CACHE_HEADERS },
+        );
       }
     }
 
+    if (!receivedResponse && lastError) throw lastError;
     return Response.json(
-      { location, articles: articles.slice(0, 3) },
+      { location, articles: [] },
       { headers: NEWS_CACHE_HEADERS },
     );
   } catch (error) {
     const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     console.error(`Local wildfire news lookup failed (${reason})`);
-    return Response.json({ error: "News unavailable" }, { status: 502 });
+    return Response.json({ error: "News unavailable" }, { status: 502, headers: NEWS_ERROR_HEADERS });
   }
 }

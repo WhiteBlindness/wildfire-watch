@@ -80,7 +80,7 @@ export default function GlobalOverview({
         <dl className="mt-3 border-t border-border/45 pt-3 text-xs">
           <div className="min-w-0">
             <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/45">{t.overview.sourceIdentifier}</dt>
-            <dd className="mt-1 break-words font-mono text-[11px] text-foreground/75">{sourceId}</dd>
+            <dd className="mt-1 break-words font-mono text-[11px] tabular-nums text-foreground/75">{sourceId}</dd>
           </div>
         </dl>
         {freshness === "stale" && (
@@ -190,7 +190,7 @@ function FreshnessBadge({ freshness, labels }: { freshness: FeedFreshness | "loa
       : "text-foreground/70";
 
   return (
-    <span aria-live="polite" className={`inline-flex max-w-[10rem] shrink-0 items-center gap-1.5 text-right text-[11px] font-semibold uppercase tracking-[0.07em] ${tone}`}>
+    <span aria-live="polite" className={`inline-flex max-w-[10rem] shrink-0 items-center gap-1.5 text-right font-mono text-[11px] font-semibold uppercase tabular-nums tracking-[0.07em] ${tone}`}>
       <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${freshness === "stale" ? "bg-amber-400" : freshness === "unavailable" ? "bg-red-400" : "bg-foreground/50"}`} />
       {label}
     </span>
@@ -218,10 +218,10 @@ function MetricCard({
     <div className={`rounded-lg border border-border/60 bg-surface/75 p-4 shadow-lg backdrop-blur-xl ${className ?? ""}`}>
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
         <p className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-wide text-foreground/50">{label}</p>
-        {badge && <span className="inline-flex max-w-full min-w-0 shrink items-center justify-center whitespace-normal break-words rounded-full bg-amber-500/12 px-1.5 py-1 text-center text-[11px] font-semibold leading-tight tracking-[0.08em] text-amber-700 dark:text-amber-300 sm:shrink-0 sm:px-2">{badge}</span>}
+        {badge && <span className="inline-flex max-w-full min-w-0 shrink items-center justify-center whitespace-normal break-words rounded-full bg-amber-500/12 px-1.5 py-1 text-center font-mono text-[11px] font-semibold leading-tight tabular-nums tracking-[0.08em] text-amber-700 dark:text-amber-300 sm:shrink-0 sm:px-2">{badge}</span>}
       </div>
       <p
-        className={`mt-1 text-2xl font-semibold tabular-nums ${
+        className={`mt-1 font-mono text-2xl font-semibold tabular-nums ${
           tone === "critical" ? "text-rose-500" : tone === "warning" ? "text-amber-500" : "text-foreground"
         }`}
       >

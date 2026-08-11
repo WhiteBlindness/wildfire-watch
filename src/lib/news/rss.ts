@@ -11,6 +11,10 @@ export interface RssFilterOptions {
   requireFireKeyword?: boolean;
 }
 
+export interface RssParseOptions extends RssFilterOptions {
+  maxItems?: number;
+}
+
 export interface NewsQueryInput {
   location?: string | null;
   region?: string | null;
@@ -21,9 +25,10 @@ export interface NewsQueryInput {
 }
 
 export const DEFAULT_NEWS_LIMIT = 3;
+export const DEFAULT_RSS_SCAN_LIMIT = 100;
 export const NEWS_LOOKBACK_HOURS = 48;
 const NEWS_LOOKBACK_MS = NEWS_LOOKBACK_HOURS * 60 * 60 * 1000;
-export const FIRE_NEWS_QUERY = "(wildfire OR fire OR incêndio)";
+export const FIRE_NEWS_QUERY = "(wildfire OR fire)";
 const FIRE_KEYWORD_PATTERN = /\b(?:wildfires?|fires?|incendios?|incêndios?)\b/i;
 const NAMED_ENTITIES: Record<string, string> = {
   amp: "&",
@@ -150,42 +155,88 @@ export function filterRssArticles(
 }
 
 /** Parse all valid RSS items, then apply the authoritative server-side filter. */
-export function parseRssArticles(xml: string, options: RssFilterOptions = {}): NewsArticle[] {
-  const parsed = [...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)]
-    .map((match) => parseArticle(match[1]))
-    .filter((article): article is NewsArticle => article !== null);
-  return filterRssArticles(parsed, options);
+export function parseRssArticles(xml: string, options: RssParseOptions = {}): NewsArticle[] {
+  const { maxItems = DEFAULT_RSS_SCAN_LIMIT, ...filterOptions } = options;
+  const scanLimit = Number.isFinite(maxItems)
+    ? Math.min(DEFAULT_RSS_SCAN_LIMIT, Math.max(0, Math.floor(maxItems)))
+    : DEFAULT_RSS_SCAN_LIMIT;
+  const parsed: NewsArticle[] = [];
+  let scannedItems = 0;
+
+  for (const match of xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
+    if (scannedItems >= scanLimit) break;
+    scannedItems += 1;
+    const article = parseArticle(match[1]);
+    if (article) parsed.push(article);
+  }
+
+  return filterRssArticles(parsed, filterOptions);
 }
 
-function primaryQueryTerm(input: NewsQueryInput): string | null {
-  const location = input.location?.split(/[\/,]/)[0]?.trim();
-  const term = [location, input.region?.trim(), input.country?.trim()]
-    .find((candidate): candidate is string => Boolean(candidate));
-  return term ? `"${term.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : null;
+function cleanGeographyTerm(value: string | null | undefined): string | null {
+  const cleaned = value?.replace(/\s+/g, " ").trim();
+  return cleaned || null;
 }
 
-function afterDate(startedAt: string | null | undefined): string | null {
-  const effectiveCutoff = getEffectiveNewsCutoff(startedAt);
-  return effectiveCutoff?.slice(0, 10) ?? null;
+/** Extract the most specific label while tolerating common composite formats
+ * such as `Village / Municipality, Region, Country`. */
+export function extractVillage(
+  location: string | null | undefined,
+  region: string | null | undefined,
+  country: string | null | undefined,
+): string | null {
+  const cleanedLocation = cleanGeographyTerm(location);
+  if (!cleanedLocation) return null;
+
+  const parts = cleanedLocation
+    .split(/\s*(?:\/|,|\||>|\u203a|\u2192)\s*/)
+    .map(cleanGeographyTerm)
+    .filter((term): term is string => term !== null);
+
+  return parts[0] ?? cleanGeographyTerm(region) ?? cleanGeographyTerm(country) ?? cleanedLocation;
 }
 
-function buildProviderQuery(input: NewsQueryInput): string {
-  const scope = primaryQueryTerm(input);
-  const date = afterDate(input.startedAt ?? input.publishedAfter);
-  return [FIRE_NEWS_QUERY, scope, date ? `after:${date}` : null]
-    .filter((part): part is string => Boolean(part))
-    .join(" ");
+function quoteGeographyTerm(value: string | null): string | null {
+  return value ? `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : null;
+}
+
+function joinQuery(parts: Array<string | null>): string {
+  return parts.filter((part): part is string => part !== null).join(" ");
+}
+
+/** Ordered from highest precision to broadest national context. */
+export function buildGoogleNewsQueries(input: NewsQueryInput): [string, string, string] {
+  const village = extractVillage(input.location, input.region, input.country);
+  const region = cleanGeographyTerm(input.region);
+  const country = cleanGeographyTerm(input.country);
+  const regionalScope = region ?? country ?? village;
+  const nationalScope = country ?? region ?? village;
+
+  return [
+    joinQuery([
+      quoteGeographyTerm(village),
+      quoteGeographyTerm(region),
+      quoteGeographyTerm(country),
+      FIRE_NEWS_QUERY,
+      "when:3d",
+    ]),
+    joinQuery([
+      quoteGeographyTerm(regionalScope),
+      region && country ? quoteGeographyTerm(country) : null,
+      FIRE_NEWS_QUERY,
+      "when:7d",
+    ]),
+    joinQuery([quoteGeographyTerm(nationalScope), FIRE_NEWS_QUERY]),
+  ];
 }
 
 export function buildGoogleNewsQuery(input: NewsQueryInput): string {
-  return buildProviderQuery(input);
+  return buildGoogleNewsQueries(input)[0];
 }
 
-/** Bing accepts the same Boolean keyword group; unlike the old fallback, keep
- * the group and the cutoff in the provider query and enforce them again after
- * parsing the response. */
+/** The network-error fallback starts with the same precision query. */
 export function buildBingNewsQuery(input: NewsQueryInput): string {
-  return buildProviderQuery(input);
+  return buildGoogleNewsQuery(input);
 }
 
 export const buildNewsQuery = buildGoogleNewsQuery;
