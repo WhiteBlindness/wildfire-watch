@@ -1,7 +1,7 @@
 "use client";
 
 import { Info, Maximize2, Minimize2, Pause, Play, Rewind } from "lucide-react";
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { GLOBAL_TIMELINE_HOURS } from "@/lib/wildfire/temporal";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
@@ -14,7 +14,13 @@ interface GlobalTimelineControlProps {
 
 export default function GlobalTimelineControl({ isPlaying, value, onChange, onTogglePlayback }: GlobalTimelineControlProps) {
   const { t } = useLocale();
+  // Default to minimised on small viewports so the map is unobstructed on
+  // arrival. SSR and the initial client render both use false so hydration
+  // stays consistent; the effect runs after the 400 ms map fade-in anyway.
   const [isMinimized, setIsMinimized] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) setIsMinimized(true);
+  }, []);
   const remainingHours = Math.max(0, GLOBAL_TIMELINE_HOURS - value);
   const currentLabel = remainingHours === 0 ? t.timeline.now : `T-${remainingHours}h`;
   const timelineProgress = `${(Math.min(GLOBAL_TIMELINE_HOURS, Math.max(0, value)) / GLOBAL_TIMELINE_HOURS) * 100}%`;
@@ -23,10 +29,10 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
     <section
       aria-label={t.timeline.controlLabel}
       data-testid="global-timeline"
-      className={`pointer-events-auto relative z-30 overflow-hidden border border-neutral-200 bg-white/90 text-neutral-900 shadow-[0_18px_50px_rgba(0,0,0,0.18)] backdrop-blur-md transition-[width,height,border-radius,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none dark:border-neutral-800 dark:bg-neutral-900/90 dark:text-neutral-100 ${
+      className={`pointer-events-auto relative z-30 overflow-hidden border border-neutral-200 bg-white/85 text-neutral-900 shadow-lg backdrop-blur-md transition-[width,height,border-radius,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none dark:border-neutral-800 dark:bg-neutral-900/85 dark:text-neutral-100 ${
         isMinimized
           ? "ml-auto h-12 w-20 rounded-full"
-          : "mx-auto h-[5.5rem] w-[min(31rem,calc(100vw-1.5rem))] rounded-2xl"
+          : "mx-auto h-[5.5rem] w-[min(31rem,calc(100vw-1.5rem))] rounded-xl md:w-[min(28rem,calc(100vw-416px-3rem))]"
       }`}
     >
       <div

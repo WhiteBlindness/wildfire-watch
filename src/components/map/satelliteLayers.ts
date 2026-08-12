@@ -24,15 +24,34 @@ const SATELLITE_RASTER_SOURCE: RasterSourceSpecification = {
   attribution: SATELLITE_ATTRIBUTION,
 };
 
+// Raster paint calibration rationale:
+//
+//   raster-saturation: 0.08  — a subtle natural lift that keeps land colours
+//     (Saharan sand, Arctic ice, European forest) looking like real satellite
+//     imagery rather than a processed filter. The ocean is also served here:
+//     in satellite mode getWaterColorOverrides hides the CARTO "water" fill so
+//     the Esri World_Imagery ocean tiles are fully visible with their built-in
+//     bathymetric depth colour (continental shelf, canyons, abyssal plains).
+//     0.08 matched a verified Google-Earth screenshot; 0.45 caused the Sahara
+//     to render as neon yellow (the "radioactive" failure mode).
+//
+//   raster-brightness-min: 0  — no artificial floor. Land is already well
+//     above 0 luminance, and the Esri ocean depth colours are preserved by the
+//     imagery tiles themselves (no need to boost from near-black). Keeping at
+//     default avoids clipping ocean depth gradients.
+//
+//   raster-contrast: 0.05  — very slight sharpening for a Google-Earth-like
+//     punch; kept small to avoid clipping highlights.
 const SATELLITE_RASTER_LAYER: AddLayerObject = {
   id: SATELLITE_LAYER_ID,
   type: "raster",
   source: SATELLITE_SOURCE_ID,
   paint: {
-    "raster-brightness-max": 0.64,
-    "raster-saturation": -0.28,
-    "raster-contrast": 0.16,
-    "raster-opacity": 0.88,
+    "raster-brightness-max": 1,
+    "raster-brightness-min": 0,
+    "raster-saturation": 0.08,
+    "raster-contrast": 0.05,
+    "raster-opacity": 1,
   },
 };
 

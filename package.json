@@ -17,6 +17,7 @@
     "test:overview-metrics": "esbuild ./src/lib/wildfire/overview-metrics.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/overview-metrics.test.cjs && node ./node_modules/.cache/wildfire-watch/overview-metrics.test.cjs",
     "test:rss": "esbuild ./src/lib/news/rss.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/rss.test.cjs && node ./node_modules/.cache/wildfire-watch/rss.test.cjs",
     "test:news-route": "esbuild ./src/app/api/news/route.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/news-route.test.cjs && node ./node_modules/.cache/wildfire-watch/news-route.test.cjs",
+    "test:fire-detail": "esbuild ./src/app/api/fires/detail/route.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/fire-detail.test.cjs && node ./node_modules/.cache/wildfire-watch/fire-detail.test.cjs",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
