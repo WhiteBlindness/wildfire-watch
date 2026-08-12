@@ -10,6 +10,13 @@ const DETAIL_CACHE_TTL_SECONDS = 1_800; // 30 minutes
 const MAX_BBOX_SPAN_DEGREES = 5;
 const SAFETY_CAP_POINTS = 20_000;
 const UPSTREAM_TIMEOUT_MS = 15_000;
+// The FIRMS NRT archive realistically serves roughly 60 days of data.
+// Requests older than this produce confusing upstream errors rather than clean
+// empty results, so reject them early with a clear 400.
+const NRT_ARCHIVE_MAX_AGE_DAYS = 60;
+// Match the tolerance used in firms-csv.ts so start-date validation stays
+// consistent with individual detection timestamp validation.
+const FIRMS_TIMESTAMP_FUTURE_TOLERANCE_MS = 6 * 60 * 60 * 1_000;
 
 const DETAIL_CACHE_HEADERS = {
   "Cache-Control": `public, max-age=${DETAIL_CACHE_TTL_SECONDS}, s-maxage=${DETAIL_CACHE_TTL_SECONDS}, stale-while-revalidate=3600`,
@@ -22,6 +29,7 @@ export interface FireDetailPayload {
   generatedAt: string;
   bbox: [number, number, number, number];
   days: number;
+  start: string | null;
   points: CachedFirmsPoint[];
 }
 
@@ -87,17 +95,70 @@ function roundCoord(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function buildCacheKey(west: number, south: number, east: number, north: number, days: number): string {
+/**
+ * Parses and validates the optional `start` query parameter (YYYY-MM-DD).
+ *
+ * Returns the string unchanged when valid, null when absent (rolling-window
+ * behaviour is preserved), or a descriptive error message string when the
+ * value is present but invalid.
+ *
+ * Validation rules:
+ *   - Must match YYYY-MM-DD exactly.
+ *   - Must not be in the future (allows a 6-hour tolerance matching
+ *     FIRMS_TIMESTAMP_FUTURE_TOLERANCE_MS in firms-csv.ts).
+ *   - Must not be older than NRT_ARCHIVE_MAX_AGE_DAYS days from today.
+ */
+function parseStartDate(value: string | null): string | null | { error: string } {
+  if (value === null) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return { error: "Invalid parameter: start must be a date in YYYY-MM-DD format" };
+  }
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime())) {
+    return { error: "Invalid parameter: start is not a valid calendar date" };
+  }
+  const now = Date.now();
+  if (parsed.getTime() > now + FIRMS_TIMESTAMP_FUTURE_TOLERANCE_MS) {
+    return { error: "Invalid parameter: start must not be in the future" };
+  }
+  const oldestAllowedMs = now - NRT_ARCHIVE_MAX_AGE_DAYS * 24 * 60 * 60 * 1_000;
+  if (parsed.getTime() < oldestAllowedMs) {
+    return { error: `Invalid parameter: start is older than the ${NRT_ARCHIVE_MAX_AGE_DAYS}-day NRT archive window` };
+  }
+  return value;
+}
+
+function buildCacheKey(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  days: number,
+  start: string | null,
+): string {
   const rw = roundCoord(west);
   const rs = roundCoord(south);
   const re = roundCoord(east);
   const rn = roundCoord(north);
-  return `fire-detail:v1:${rw},${rs},${re},${rn}:${days}`;
+  const base = `fire-detail:v1:${rw},${rs},${re},${rn}:${days}`;
+  // Only append the start segment when present so undated rolling-window keys
+  // remain byte-identical to the pre-feature format (existing KV entries are
+  // still served; no cache stampede on deploy).
+  return start !== null ? `${base}:${start}` : base;
 }
 
-function buildAreaUrl(mapKey: string, west: number, south: number, east: number, north: number, days: number): string {
+function buildAreaUrl(
+  mapKey: string,
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  days: number,
+  start: string | null,
+): string {
   const area = `${west},${south},${east},${north}`;
-  return `${FIRMS_BASE_URL}/${encodeURIComponent(mapKey.trim())}/${FIRMS_SOURCE}/${area}/${days}`;
+  const base = `${FIRMS_BASE_URL}/${encodeURIComponent(mapKey.trim())}/${FIRMS_SOURCE}/${area}/${days}`;
+  return start !== null ? `${base}/${start}` : base;
 }
 
 export async function handleFireDetailRequest(request: Request, env: DetailEnv): Promise<Response> {
@@ -128,6 +189,13 @@ export async function handleFireDetailRequest(request: Request, env: DetailEnv):
     return invalidRequest(`Bbox too large: latitude span ${spanLat.toFixed(2)}° exceeds ${MAX_BBOX_SPAN_DEGREES}° limit`);
   }
 
+  const startResult = parseStartDate(params.get("start"));
+  if (startResult !== null && typeof startResult === "object" && "error" in startResult) {
+    return invalidRequest(startResult.error);
+  }
+  // TypeScript narrowing: startResult is now string | null.
+  const start = startResult as string | null;
+
   const mapKey = env.FIRMS_MAP_KEY?.trim();
   if (!mapKey) {
     return Response.json(
@@ -136,7 +204,7 @@ export async function handleFireDetailRequest(request: Request, env: DetailEnv):
     );
   }
 
-  const cacheKey = buildCacheKey(west, south, east, north, days);
+  const cacheKey = buildCacheKey(west, south, east, north, days, start);
   try {
     const cached = await env.FIRMS_CACHE.get(cacheKey);
     if (cached) {
@@ -158,7 +226,7 @@ export async function handleFireDetailRequest(request: Request, env: DetailEnv):
     const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
     try {
       const response = await fetch(
-        buildAreaUrl(mapKey, west, south, east, north, days),
+        buildAreaUrl(mapKey, west, south, east, north, days, start),
         { cache: "no-store", headers: { Accept: "text/csv" }, signal: controller.signal },
       );
       if (!response.ok) throw new FirmsUpstreamError(response.status);
@@ -202,6 +270,7 @@ export async function handleFireDetailRequest(request: Request, env: DetailEnv):
     generatedAt: new Date().toISOString(),
     bbox: [west, south, east, north],
     days,
+    start,
     points,
   };
 

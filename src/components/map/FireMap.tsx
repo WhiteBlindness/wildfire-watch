@@ -252,9 +252,39 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
 
     const bbox = buildDetailBbox(selectedFireEventIds, [...perimeterEvents, ...events]);
 
+    // Anchor the fetch window to the fire's own detection time so stale
+    // snapshot fires (whose detections may be days or weeks in the past) are
+    // bracketed by the correct NRT window rather than the rolling "most recent
+    // N days from now" default, which returns 0 points for any fire that is
+    // no longer burning within the last few days.
+    //
+    // Strategy: start = detectedAt − 1 day (UTC), days = 3.
+    // The detection sits roughly in the middle of the window (day 2 of 3),
+    // which is preferable to placing it on the window boundary where a
+    // one-second rounding error could exclude it entirely.
+    //
+    // Edge cases:
+    //   - Missing / unparseable timestamp → fall back to rolling window
+    //     (omit start; the API default applies).
+    //   - Computed start is in the future (possible if clock skew or
+    //     snapshot generatedAt > wall clock) → omit start; rolling window is
+    //     safer than a 400 from the route.
+    const detailStart = ((): string | undefined => {
+      const raw = selectedFire.detectedAt;
+      if (!raw) return undefined;
+      const detectedMs = new Date(raw).getTime();
+      if (!Number.isFinite(detectedMs)) return undefined;
+      // Subtract one full day so the detection is mid-window, not on its edge.
+      const startMs = detectedMs - 24 * 60 * 60 * 1_000;
+      if (startMs > Date.now()) return undefined;
+      // Format as YYYY-MM-DD in UTC — using local time near midnight would
+      // silently shift the date by one day.
+      return new Date(startMs).toISOString().slice(0, 10);
+    })();
+
     (async () => {
       try {
-        const points = await fetchFireDetailPoints(bbox, 3, controller.signal);
+        const points = await fetchFireDetailPoints(bbox, { days: 3, start: detailStart, signal: controller.signal });
         // Guard against out-of-order responses from rapid re-selections.
         if (detailFetchCounterRef.current !== fetchId) return;
         setDetailPoints(points);

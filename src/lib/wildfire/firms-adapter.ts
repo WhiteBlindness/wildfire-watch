@@ -57,22 +57,33 @@ export const firmsAdapter: WildfireDataAdapter = {
   },
 };
 
+export interface FetchFireDetailOptions {
+  /** Number of days of NRT data to request (1–10). Defaults to 3 when absent. */
+  days?: number;
+  /**
+   * Anchors the day-range window to a specific calendar date (YYYY-MM-DD, UTC).
+   * When present, the N-day window starts at this date; when absent, the window
+   * is the most recent N days measured from now.
+   */
+  start?: string;
+  /** AbortSignal so a rapid re-selection can cancel the in-flight request. */
+  signal?: AbortSignal;
+}
+
 /**
  * Fetches full-resolution VIIRS detections for a fire's bounding box from
  * GET /api/fires/detail. No downsampling is applied — the entire point cloud
  * is returned for dense burn-scar visualisation.
  *
- * @param bbox  [west, south, east, north] in WGS-84 degrees.
- * @param days  Number of days of NRT data to request (1–10, default 3).
- * @param signal  Optional AbortSignal so a rapid re-selection can cancel the
- *                in-flight request before the response arrives.
+ * @param bbox     [west, south, east, north] in WGS-84 degrees.
+ * @param options  Optional fetch controls — days, start date, and AbortSignal.
  * @throws  Error on non-OK responses. Never returns an empty array on error.
  */
 export async function fetchFireDetailPoints(
   bbox: [number, number, number, number],
-  days?: number,
-  signal?: AbortSignal,
+  options: FetchFireDetailOptions = {},
 ): Promise<CachedFirmsPoint[]> {
+  const { days, start, signal } = options;
   const [west, south, east, north] = bbox;
   const params = new URLSearchParams({
     west: String(west),
@@ -81,6 +92,7 @@ export async function fetchFireDetailPoints(
     north: String(north),
   });
   if (days !== undefined) params.set("days", String(days));
+  if (start !== undefined) params.set("start", start);
 
   const response = await fetch(`/api/fires/detail?${params}`, {
     cache: "no-store",

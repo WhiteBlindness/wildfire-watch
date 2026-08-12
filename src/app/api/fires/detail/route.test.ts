@@ -434,6 +434,146 @@ test("returns 503 when both binding and process.env are absent", async () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// start date — valid, forwarded as trailing URL segment
+// ---------------------------------------------------------------------------
+
+test("valid start date is forwarded as the trailing segment in the upstream URL", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = "";
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    capturedUrl = input instanceof Request ? input.url : String(input);
+    return new Response(makeCsv(1), { status: 200, headers: { "Content-Type": "text/csv" } });
+  };
+
+  try {
+    const env = makeEnv("valid-key");
+    // Use a date 5 days ago — well within the NRT archive window and not in the future.
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
+    const res = await handleFireDetailRequest(
+      request(validParams({ start: fiveDaysAgo })),
+      env,
+    );
+    assert.equal(res.status, 200);
+    assert.ok(
+      capturedUrl.endsWith(`/${fiveDaysAgo}`),
+      `upstream URL must end with /${fiveDaysAgo}, got: ${capturedUrl}`,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("omitted start preserves the rolling-window URL shape (no trailing date segment)", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedUrl = "";
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    capturedUrl = input instanceof Request ? input.url : String(input);
+    return new Response(makeCsv(1), { status: 200, headers: { "Content-Type": "text/csv" } });
+  };
+
+  try {
+    const env = makeEnv("valid-key");
+    const res = await handleFireDetailRequest(
+      // No start param — rely on the default rolling-window behaviour.
+      request("west=-10.5&south=37.0&east=-8.5&north=39.0"),
+      env,
+    );
+    assert.equal(res.status, 200);
+    // URL must end with /3 (the day-range segment), not /3/<date>.
+    assert.ok(
+      capturedUrl.endsWith("/3"),
+      `upstream URL must end with /3 (no trailing date), got: ${capturedUrl}`,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// start date — invalid inputs rejected with 400
+// ---------------------------------------------------------------------------
+
+test("rejects a malformed start date (not YYYY-MM-DD)", async () => {
+  const env = makeEnv("valid-key");
+  const res = await handleFireDetailRequest(
+    request(validParams({ start: "31-07-2026" })),
+    env,
+  );
+  assert.equal(res.status, 400);
+  const body = await res.json() as { error: string };
+  assert.ok(body.error.toLowerCase().includes("start"));
+});
+
+test("rejects a start date in the future", async () => {
+  const env = makeEnv("valid-key");
+  // Ten days from now — clearly future, beyond the 6-hour tolerance.
+  const tenDaysFromNow = new Date(Date.now() + 10 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
+  const res = await handleFireDetailRequest(
+    request(validParams({ start: tenDaysFromNow })),
+    env,
+  );
+  assert.equal(res.status, 400);
+  const body = await res.json() as { error: string };
+  assert.ok(body.error.toLowerCase().includes("future") || body.error.toLowerCase().includes("start"));
+});
+
+test("rejects a start date older than the NRT archive window", async () => {
+  const env = makeEnv("valid-key");
+  // 100 days ago — well beyond the 60-day NRT archive limit.
+  const tooOld = new Date(Date.now() - 100 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
+  const res = await handleFireDetailRequest(
+    request(validParams({ start: tooOld })),
+    env,
+  );
+  assert.equal(res.status, 400);
+  const body = await res.json() as { error: string };
+  assert.ok(body.error.toLowerCase().includes("start") || body.error.toLowerCase().includes("archive") || body.error.toLowerCase().includes("nrt"));
+});
+
+// ---------------------------------------------------------------------------
+// start date — cache key isolation
+// ---------------------------------------------------------------------------
+
+test("requests differing only by start date do not share a cache entry", async () => {
+  const originalFetch = globalThis.fetch;
+  let nasaCallCount = 0;
+  globalThis.fetch = async () => {
+    nasaCallCount += 1;
+    return new Response(makeCsv(1), { status: 200, headers: { "Content-Type": "text/csv" } });
+  };
+
+  try {
+    const kv = makeKv();
+    const env = makeEnv("valid-key", kv);
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
+
+    // First request: with start date.
+    const res1 = await handleFireDetailRequest(
+      request(validParams({ start: fiveDaysAgo })),
+      env,
+    );
+    assert.equal(res1.status, 200);
+
+    // Second request: no start date (rolling window) — MUST NOT hit the dated cache entry.
+    const res2 = await handleFireDetailRequest(
+      request(validParams()),
+      env,
+    );
+    assert.equal(res2.status, 200);
+
+    // Both requests must have gone to NASA (two distinct cache keys, neither
+    // hits the other's entry).
+    assert.equal(nasaCallCount, 2, "each unique start date must have its own cache entry");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// days default
+// ---------------------------------------------------------------------------
+
 test("defaults days to 3 when the parameter is omitted", async () => {
   const originalFetch = globalThis.fetch;
   let capturedUrl = "";
