@@ -90,6 +90,19 @@ function getUnselectedMarkerFilter(selectedEventIds: readonly string[]): FilterS
   ];
 }
 
+/**
+ * Cluster bubbles aggregate a count over the same ground the selected fire's
+ * full-resolution VIIRS mosaic already covers, so once a fire is selected they
+ * are both redundant and visually occluding — the count label lands on top of
+ * the burn scar. Suppress the whole cluster presentation while a selection is
+ * active. Individual markers stay visible (see getUnselectedMarkerFilter) so a
+ * neighbouring fire remains selectable without returning to the global view.
+ */
+function getClusterFilter(hasSelection: boolean): FilterSpecification {
+  if (hasSelection) return ["==", ["literal", 1], ["literal", 0]];
+  return ["has", "point_count"];
+}
+
 function getCameraPadding(panelOpen: boolean) {
   return getMapCameraPadding({
     viewportWidth: window.innerWidth,
@@ -205,6 +218,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   const userPannedAwayRef = useRef(false);
 
   const selectedFireEventIds = selectedFire?.eventIds;
+  const hasSelection = selectedFire !== null;
 
   // Low-resolution fallback pixel data derived from the globally-downsampled
   // perimeterEvents snapshot. Shown immediately on selection and kept as a
@@ -593,7 +607,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_GLOW_LAYER_ID}
           type="circle"
-          filter={["has", "point_count"]}
+          filter={getClusterFilter(hasSelection)}
           paint={{
             "circle-radius": [
               "interpolate", ["linear"],
@@ -618,7 +632,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_HIT_AREA_LAYER_ID}
           type="circle"
-          filter={["has", "point_count"]}
+          filter={getClusterFilter(hasSelection)}
           paint={{
             "circle-radius": [
               "interpolate", ["linear"],
@@ -640,7 +654,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_LAYER_ID}
           type="circle"
-          filter={["has", "point_count"]}
+          filter={getClusterFilter(hasSelection)}
           paint={{
             "circle-radius": [
               "interpolate", ["linear"],

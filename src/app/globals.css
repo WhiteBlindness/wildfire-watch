@@ -301,9 +301,11 @@ body {
   text-transform: uppercase;
 }
 
-html:not(.dark) .wildfire-watch:not([data-basemap-mode="satellite"]) .maplibregl-ctrl-scale {
+/* The scale readout follows the page theme in every basemap mode. Over bright
+   imagery it still needs an opaque plate to stay legible against pale terrain. */
+html:not(.dark) .wildfire-watch .maplibregl-ctrl-scale {
   color: #12151a;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   border-color: rgba(18, 21, 26, 0.16);
 }
 
@@ -343,52 +345,48 @@ html:not(.dark) .wildfire-watch .maplibregl-ctrl-attrib {
   }
 }
 
-/* Satellite imagery is one stable instrument surface, even when the page
-   chrome is in the daylight-shift theme. */
+/* In DARK theme the floating chrome is darkened further over satellite imagery so
+   it reads as one instrument surface against the brighter raster. These rules are
+   deliberately scoped to `html.dark`: in light theme the chrome must follow the
+   page theme, matching the legend, timeline and side panel. */
 .wildfire-watch-map-canvas[data-basemap-mode="satellite"],
 .wildfire-watch-map-canvas[data-basemap-mode="satellite"] .maplibregl-map {
   background-color: #0f172a;
 }
 
-.wildfire-watch[data-basemap-mode="satellite"] .mission-brand-chip,
-.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > *,
-.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > [role="group"] {
-  color: #e8eaed !important;
-  background-color: rgba(10, 13, 18, 0.78) !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
-}
-
-.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls button {
-  color: #e8eaed !important;
-}
-
-.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > [role="group"] > span {
-  background-color: #e8eaed !important;
-}
-
-.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > [role="group"] > button[aria-pressed="true"] {
-  color: #0f172a !important;
-}
-
-.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > button.group > span:first-child,
-.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > button:not(.group) > span {
-  color: #0f172a !important;
-  background-color: #e8eaed !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
-}
-
-.wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > button.group > span:last-child {
-  background-color: rgba(255, 255, 255, 0.12) !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
-}
-
-.wildfire-watch[data-basemap-mode="satellite"] .maplibregl-ctrl-attrib {
+html.dark .wildfire-watch[data-basemap-mode="satellite"] .mission-brand-chip,
+html.dark .wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > *,
+html.dark .wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > [role="group"] {
   color: #e8eaed;
-  background: rgba(10, 13, 18, 0.82);
+  background-color: rgba(10, 13, 18, 0.78);
   border-color: rgba(255, 255, 255, 0.14);
 }
 
-html:not(.dark) .wildfire-watch[data-basemap-mode="satellite"] .maplibregl-ctrl-attrib {
+html.dark .wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls button {
+  color: #e8eaed;
+}
+
+html.dark .wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > [role="group"] > span {
+  background-color: #e8eaed;
+}
+
+html.dark .wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > [role="group"] > button[aria-pressed="true"] {
+  color: #0f172a;
+}
+
+html.dark .wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > button.group > span:first-child,
+html.dark .wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > button:not(.group) > span {
+  color: #0f172a;
+  background-color: #e8eaed;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+html.dark .wildfire-watch[data-basemap-mode="satellite"] .mission-top-controls > button.group > span:last-child {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+html.dark .wildfire-watch[data-basemap-mode="satellite"] .maplibregl-ctrl-attrib {
   color: #e8eaed;
   background: rgba(10, 13, 18, 0.82);
   border-color: rgba(255, 255, 255, 0.14);
