@@ -19,8 +19,6 @@ import {
   getWaterColorOverrides,
   observeStyleReady,
   computeDetailCameraTarget,
-  getClusterVisibilityFilter,
-  getClusterCountFilter,
 } from "./mapPresentation";
 import { syncSatelliteLayers } from "./satelliteLayers";
 
@@ -61,23 +59,24 @@ const FIRE_DETAIL_ZOOM = 12;
 // in the unobstructed map area beside the mission panel.
 const FLY_DURATION_MS = 1350;
 
-// Zoom threshold for cluster suppression while a fire is selected.
-//
-// Why 9? Two constraints bracket the choice:
-//   - Must be BELOW clusterMaxZoom (10): clusters only exist at zoom ≤ 10, so
-//     a threshold ≥ 10 would never suppress anything — the feature becomes a
-//     no-op.
-//   - Must be ABOVE the global-overview / country-fit band (WORLD_VIEW = 3,
-//     country fitBounds maxZoom = 7): a threshold ≤ 7 would suppress clusters
-//     even in the zoomed-out global view, defeating the whole point.
-//   That brackets the sensible range to (7, 10). Zoom 9 sits just inside
-//   clusterMaxZoom so a single nudge toward the selected fire engages
-//   suppression, while the user only needs to zoom back to 9 to restore
-//   the overview bubbles. Note: single-point selections fly to
-//   FIRE_DETAIL_ZOOM = 12, which is above clusterMaxZoom = 10, so clusters
-//   never coexist there anyway — suppression only bites in the intermediate
-//   cluster-selection band (~8–10).
-const CLUSTER_SUPPRESS_ZOOM_THRESHOLD = 9;
+/**
+ * The single zoom at which the map hands over from the circular marker
+ * presentation to the VIIRS square mosaic. Circles draw strictly below it, the
+ * mosaic strictly at or above it, so the two are mutually exclusive and can
+ * never overlap — a round dot sitting in the middle of the footprint grid is
+ * exactly the artefact this threshold exists to prevent.
+ *
+ * Why 11? A 375 m footprint is roughly 3 px at zoom 10, 6 px at zoom 11 and
+ * 13 px at zoom 12 at mid latitudes, so the grid only reads as a matrix rather
+ * than noise from about zoom 11. It also sits above clusterMaxZoom (10), so
+ * clusters have already dissolved into individual markers before the handover
+ * and the transition is a single visual step rather than two.
+ *
+ * Enforcement is declarative, through each layer's minzoom/maxzoom, so the swap
+ * is frame-accurate and costs no React re-render. MapLibre draws a layer while
+ * minzoom <= zoom < maxzoom, so sharing one constant makes the boundary exact.
+ */
+const VIIRS_MOSAIC_MIN_ZOOM = 11;
 
 // Detail bbox parameters — how much padding to add around an event's
 // coordinates when computing the fetch bbox. This keeps the VIIRS mosaic from
@@ -230,12 +229,6 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   const userPannedAwayRef = useRef(false);
 
   const selectedFireEventIds = selectedFire?.eventIds;
-  const hasSelection = selectedFire !== null;
-  // Suppress cluster presentation only when zoomed in close enough that the
-  // selected fire's VIIRS mosaic is the subject of the view. When the user
-  // zooms back out (below the threshold) the cluster overview returns, even
-  // with a selection still active.
-  const clustersSuppressed = hasSelection && isZoomedIn;
 
   // Low-resolution fallback pixel data derived from the globally-downsampled
   // perimeterEvents snapshot. Shown immediately on selection and kept as a
@@ -247,6 +240,28 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     [perimeterEvents, selectedFireEventIds],
   );
 
+  // Above the handover zoom the mosaic must stand on its own, because the
+  // circles are gone and the map would otherwise be empty for anyone who has
+  // not tapped a fire. Derive footprints for every visible detection from the
+  // snapshot so the matrix is a function of zoom, not of selection state.
+  //
+  // Gated on isZoomedIn rather than computed eagerly: this builds a geodesic
+  // buffer per detection, which is far too costly to run for the whole world
+  // snapshot on every feed update when the result would not even be drawn.
+  const snapshotPixelData = useMemo(
+    () => isZoomedIn
+      ? pointsToViirsPixelGeoJSON(events.map((event) => ({
+          id: event.id,
+          lat: event.location.lat,
+          lng: event.location.lng,
+          frpMw: event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 0,
+          confidencePct: event.satelliteDetection?.confidencePct ?? 0,
+          detectedAt: event.satelliteDetection?.detectedAt ?? event.startedAt,
+        })))
+      : { type: "FeatureCollection" as const, features: [] },
+    [events, isZoomedIn],
+  );
+
   // Full-resolution pixel data fetched from /api/fires/detail. null means
   // "not yet loaded or selection cleared"; on success it replaces lowResPixelData.
   const [detailPoints, setDetailPoints] = useState<CachedFirmsPoint[] | null>(null);
@@ -256,9 +271,11 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     [detailPoints],
   );
 
-  // The source data is whichever is denser — detail on success, low-res while
-  // loading or on fetch failure. Never renders an empty state during a fetch.
-  const selectedPixelData = detailPixelData ?? lowResPixelData;
+  // Densest available wins: the full-resolution fetch for the selected fire,
+  // else that fire's low-res footprints while the fetch is in flight or after a
+  // failure, else the snapshot-wide matrix so zooming in always yields squares.
+  const selectedPixelData = detailPixelData
+    ?? (lowResPixelData.features.length > 0 ? lowResPixelData : snapshotPixelData);
 
   const markerData = useMemo(() => eventsToTemporalMarkerGeoJSON(events, timelineHour), [events, timelineHour]);
 
@@ -386,7 +403,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     const map = mapOrNull;
 
     function onZoom(): void {
-      const next = map.getZoom() > CLUSTER_SUPPRESS_ZOOM_THRESHOLD;
+      const next = map.getZoom() >= VIIRS_MOSAIC_MIN_ZOOM;
       setIsZoomedIn((current) => (next !== current ? next : current));
     }
 
@@ -659,7 +676,8 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_GLOW_LAYER_ID}
           type="circle"
-          filter={getClusterVisibilityFilter(clustersSuppressed) as FilterSpecification}
+          maxzoom={VIIRS_MOSAIC_MIN_ZOOM}
+          filter={["has", "point_count"]}
           paint={{
             "circle-radius": [
               "interpolate", ["linear"],
@@ -684,7 +702,8 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_HIT_AREA_LAYER_ID}
           type="circle"
-          filter={getClusterVisibilityFilter(clustersSuppressed) as FilterSpecification}
+          maxzoom={VIIRS_MOSAIC_MIN_ZOOM}
+          filter={["has", "point_count"]}
           paint={{
             "circle-radius": [
               "interpolate", ["linear"],
@@ -706,7 +725,8 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_LAYER_ID}
           type="circle"
-          filter={getClusterVisibilityFilter(clustersSuppressed) as FilterSpecification}
+          maxzoom={VIIRS_MOSAIC_MIN_ZOOM}
+          filter={["has", "point_count"]}
           paint={{
             "circle-radius": [
               "interpolate", ["linear"],
@@ -737,7 +757,8 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_COUNT_LAYER_ID}
           type="symbol"
-          filter={getClusterCountFilter(clustersSuppressed) as FilterSpecification}
+          maxzoom={VIIRS_MOSAIC_MIN_ZOOM}
+          filter={["all", ["has", "point_count"], [">=", ["get", "point_count"], 4]]}
           layout={{
             "text-field": ["get", "point_count_abbreviated"],
             "text-size": 11,
@@ -760,6 +781,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={MARKER_LAYER_ID}
           type="circle"
+          maxzoom={VIIRS_MOSAIC_MIN_ZOOM}
           filter={getUnselectedMarkerFilter(selectedFireEventIds ?? [])}
           paint={{
             "circle-radius": [
@@ -813,6 +835,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={SELECTED_PIXEL_FILL_LAYER_ID}
           type="fill"
+          minzoom={VIIRS_MOSAIC_MIN_ZOOM}
           paint={{
             "fill-color": [
               "interpolate", ["linear"], ["coalesce", ["get", "frp"], 0],

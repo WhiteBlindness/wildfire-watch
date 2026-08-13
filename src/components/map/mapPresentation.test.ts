@@ -8,8 +8,6 @@ import {
   getBackdropColor,
   getWaterColorOverrides,
   computeDetailCameraTarget,
-  getClusterVisibilityFilter,
-  getClusterCountFilter,
   SATELLITE_BACKGROUND,
   DARK_BACKGROUND,
   LIGHT_BACKGROUND,
@@ -394,41 +392,10 @@ test("computeDetailCameraTarget clamps a single-pixel fire to DETAIL_MOSAIC_MAX_
   assert.ok(Math.abs(result.center.lat - 40.2) < 0.01);
 });
 
-// ---------------------------------------------------------------------------
-// getClusterVisibilityFilter / getClusterCountFilter
-// ---------------------------------------------------------------------------
 
-test("getClusterVisibilityFilter returns never-true filter when suppressed", () => {
-  const filter = getClusterVisibilityFilter(true);
-  // Must be a never-true literal comparison so MapLibre renders nothing.
-  assert.deepEqual(filter, ["==", ["literal", 1], ["literal", 0]]);
-});
 
-test("getClusterVisibilityFilter returns has-point_count filter when not suppressed", () => {
-  const filter = getClusterVisibilityFilter(false);
-  assert.deepEqual(filter, ["has", "point_count"]);
-});
 
-test("getClusterCountFilter composes visibility with >=4 rule when not suppressed", () => {
-  const filter = getClusterCountFilter(false);
-  // Must include the base visibility filter AND the minimum-count guard.
-  assert.deepEqual(filter, [
-    "all",
-    ["has", "point_count"],
-    [">=", ["get", "point_count"], 4],
-  ]);
-});
 
-test("getClusterCountFilter is never-true when suppressed, matching visibility filter", () => {
-  const countFilter = getClusterCountFilter(true);
-  const visFilter = getClusterVisibilityFilter(true);
-  // The first element of the "all" must be the same never-true as visibility,
-  // ensuring the label cannot outlive the bubble.
-  assert.deepEqual(countFilter, ["all", visFilter, [">=", ["get", "point_count"], 4]]);
-  // Confirm the outer "all" with a never-true first clause is itself never-true
-  // (the label is hidden when the bubble is hidden).
-  assert.deepEqual((countFilter as unknown[])[1], ["==", ["literal", 1], ["literal", 0]]);
-});
 
 test("computeDetailCameraTarget handles an antimeridian-crossing mosaic without ~360° span", () => {
   // A fire centred at 179.999°E — the pixel straddles the antimeridian and is
