@@ -4,10 +4,18 @@ import type { FireSeverity, WildfireEvent } from "./types";
 export const FIRMS_CACHE_KEY = "active-fires:v1";
 /**
  * A worldwide VIIRS NRT response normally contains tens of thousands of
- * rows. Keep a country-sized or fixture-sized response from replacing the
- * last good global snapshot in KV.
+ * rows; the current ingest budget is 15,000 points.  This threshold
+ * prevents a country-sized bbox request or a test fixture from replacing
+ * the last known-good global snapshot in KV.
+ *
+ * Raised from 1,000 → 5,000 alongside the MAX_POINTS increase so the
+ * guard scales with the expected output: a legitimate worldwide run always
+ * produces the full budget (15,000), so 5,000 still comfortably rejects
+ * any regional or fixture-sized payload while passing any real global one.
+ * The longitude/latitude band checks below provide the geographic-spread
+ * guard independently of this count threshold.
  */
-export const FIRMS_MIN_GLOBAL_POINTS = 1_000;
+export const FIRMS_MIN_GLOBAL_POINTS = 5_000;
 
 export interface CachedFirmsPoint {
   id: string;
