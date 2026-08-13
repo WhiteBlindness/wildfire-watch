@@ -19,6 +19,8 @@ import {
   getWaterColorOverrides,
   observeStyleReady,
   computeDetailCameraTarget,
+  getClusterVisibilityFilter,
+  getClusterCountFilter,
 } from "./mapPresentation";
 import { syncSatelliteLayers } from "./satelliteLayers";
 
@@ -59,6 +61,24 @@ const FIRE_DETAIL_ZOOM = 12;
 // in the unobstructed map area beside the mission panel.
 const FLY_DURATION_MS = 1350;
 
+// Zoom threshold for cluster suppression while a fire is selected.
+//
+// Why 9? Two constraints bracket the choice:
+//   - Must be BELOW clusterMaxZoom (10): clusters only exist at zoom ≤ 10, so
+//     a threshold ≥ 10 would never suppress anything — the feature becomes a
+//     no-op.
+//   - Must be ABOVE the global-overview / country-fit band (WORLD_VIEW = 3,
+//     country fitBounds maxZoom = 7): a threshold ≤ 7 would suppress clusters
+//     even in the zoomed-out global view, defeating the whole point.
+//   That brackets the sensible range to (7, 10). Zoom 9 sits just inside
+//   clusterMaxZoom so a single nudge toward the selected fire engages
+//   suppression, while the user only needs to zoom back to 9 to restore
+//   the overview bubbles. Note: single-point selections fly to
+//   FIRE_DETAIL_ZOOM = 12, which is above clusterMaxZoom = 10, so clusters
+//   never coexist there anyway — suppression only bites in the intermediate
+//   cluster-selection band (~8–10).
+const CLUSTER_SUPPRESS_ZOOM_THRESHOLD = 9;
+
 // Detail bbox parameters — how much padding to add around an event's
 // coordinates when computing the fetch bbox. This keeps the VIIRS mosaic from
 // being clipped at the event boundary. Kept well under the route's 5° cap.
@@ -88,19 +108,6 @@ function getUnselectedMarkerFilter(selectedEventIds: readonly string[]): FilterS
     ["!", ["has", "point_count"]],
     ["!", ["in", ["get", "fireId"], ["literal", [...selectedEventIds]]]],
   ];
-}
-
-/**
- * Cluster bubbles aggregate a count over the same ground the selected fire's
- * full-resolution VIIRS mosaic already covers, so once a fire is selected they
- * are both redundant and visually occluding — the count label lands on top of
- * the burn scar. Suppress the whole cluster presentation while a selection is
- * active. Individual markers stay visible (see getUnselectedMarkerFilter) so a
- * neighbouring fire remains selectable without returning to the global view.
- */
-function getClusterFilter(hasSelection: boolean): FilterSpecification {
-  if (hasSelection) return ["==", ["literal", 1], ["literal", 0]];
-  return ["has", "point_count"];
 }
 
 function getCameraPadding(panelOpen: boolean) {
@@ -204,6 +211,11 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   const hasReportedMapLoadRef = useRef(false);
   const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
   const [isHoveringInteractiveFeature, setIsHoveringInteractiveFeature] = useState(false);
+  // Tracks whether the viewport is zoomed in past CLUSTER_SUPPRESS_ZOOM_THRESHOLD.
+  // Stored as a boolean — not raw zoom — so a zoom event only triggers a
+  // re-render when the threshold is actually crossed, never on every frame.
+  // Initialised false: the world view starts at zoom 3 (well below the threshold).
+  const [isZoomedIn, setIsZoomedIn] = useState(false);
 
   // Tracks click-handler request IDs to guard cluster-leaf async operations.
   const selectionRequestRef = useRef(0);
@@ -219,6 +231,11 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
 
   const selectedFireEventIds = selectedFire?.eventIds;
   const hasSelection = selectedFire !== null;
+  // Suppress cluster presentation only when zoomed in close enough that the
+  // selected fire's VIIRS mosaic is the subject of the view. When the user
+  // zooms back out (below the threshold) the cluster overview returns, even
+  // with a selection still active.
+  const clustersSuppressed = hasSelection && isZoomedIn;
 
   // Low-resolution fallback pixel data derived from the globally-downsampled
   // perimeterEvents snapshot. Shown immediately on selection and kept as a
@@ -349,6 +366,36 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     };
   }, [mapInstance]);
 
+  // Track whether the viewport is zoomed past CLUSTER_SUPPRESS_ZOOM_THRESHOLD
+  // so cluster suppression can be zoom-aware rather than selection-only.
+  //
+  // Uses "zoom" (fires during the zoom animation on every frame) rather than
+  // "zoomend" alone so the threshold crossing is caught mid-flight — relevant
+  // when the programmatic flyTo to a selected fire crosses the threshold before
+  // the animation completes. The flip-guard (next !== current) keeps re-renders
+  // to exactly one per threshold crossing, never once per animation frame.
+  //
+  // Deliberately does NOT gate on e.originalEvent: both user gestures AND
+  // programmatic flyTo (e.g. selecting a fire) must engage suppression, because
+  // the selection flyTo to FIRE_DETAIL_ZOOM = 12 crosses the threshold too.
+  useEffect(() => {
+    const mapOrNull: MapLibreMap | null = mapRef.current?.getMap() ?? mapInstance;
+    if (!mapOrNull) return;
+    // Capture as a non-nullable const so TypeScript can narrow inside the
+    // closure (flow narrowing does not propagate through function boundaries).
+    const map = mapOrNull;
+
+    function onZoom(): void {
+      const next = map.getZoom() > CLUSTER_SUPPRESS_ZOOM_THRESHOLD;
+      setIsZoomedIn((current) => (next !== current ? next : current));
+    }
+
+    map.on("zoom", onZoom);
+    return () => {
+      map.off("zoom", onZoom);
+    };
+  }, [mapInstance]);
+
   // When the full-resolution mosaic arrives, re-frame the camera to the actual
   // extent of the burn scar instead of the fixed zoom-12 single-point view.
   // This corrects the defect where FIRE_DETAIL_ZOOM centres on a single
@@ -413,7 +460,12 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
           ], { layers: INTERACTIVE_LAYER_IDS }))
         : null);
       if (!feature) {
-        onSelect(null);
+        // An accidental tap on empty map (panning, double-tap zoom) must not
+        // silently discard the active selection. Explicit dismissal affordances
+        // remain: the close button (fireDetail.closeLabel) and the
+        // "Voltar ao mapa global" / "Back to global map" control in
+        // FireDetailsPanel both call onClose → onSelect(null), reachable in
+        // both mobile (sheet expanded) and desktop layouts.
         return;
       }
 
@@ -607,7 +659,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_GLOW_LAYER_ID}
           type="circle"
-          filter={getClusterFilter(hasSelection)}
+          filter={getClusterVisibilityFilter(clustersSuppressed) as FilterSpecification}
           paint={{
             "circle-radius": [
               "interpolate", ["linear"],
@@ -632,7 +684,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_HIT_AREA_LAYER_ID}
           type="circle"
-          filter={getClusterFilter(hasSelection)}
+          filter={getClusterVisibilityFilter(clustersSuppressed) as FilterSpecification}
           paint={{
             "circle-radius": [
               "interpolate", ["linear"],
@@ -654,7 +706,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_LAYER_ID}
           type="circle"
-          filter={getClusterFilter(hasSelection)}
+          filter={getClusterVisibilityFilter(clustersSuppressed) as FilterSpecification}
           paint={{
             "circle-radius": [
               "interpolate", ["linear"],
@@ -685,7 +737,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         <Layer
           id={CLUSTER_COUNT_LAYER_ID}
           type="symbol"
-          filter={["all", ["has", "point_count"], [">=", ["get", "point_count"], 4]]}
+          filter={getClusterCountFilter(clustersSuppressed) as FilterSpecification}
           layout={{
             "text-field": ["get", "point_count_abbreviated"],
             "text-size": 11,

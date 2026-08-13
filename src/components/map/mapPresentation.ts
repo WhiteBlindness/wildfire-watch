@@ -347,6 +347,55 @@ export const DETAIL_MOSAIC_MAX_ZOOM = 12;
  *  widths, so the mosaic is still readable rather than sub-pixel confetti. */
 export const DETAIL_MOSAIC_MIN_ZOOM = 5;
 
+// ---------------------------------------------------------------------------
+// Cluster-filter helpers
+//
+// All cluster layers derive their suppression from a single boolean so no
+// future edit can suppress the bubble but leave the label (or vice versa).
+//
+// Two helpers, one composed from the other:
+//
+//   getClusterVisibilityFilter(suppressed) — for glow, hit-area, and bubble.
+//     When suppressed: a never-true expression so MapLibre renders nothing.
+//     When not suppressed: the standard ["has", "point_count"] guard.
+//
+//   getClusterCountFilter(suppressed) — for the count label.
+//     Composes getClusterVisibilityFilter with the existing "≥4 detections"
+//     rule so both conditions must hold — making it impossible for the label
+//     to outlive the bubble it belongs to.
+// ---------------------------------------------------------------------------
+
+/** MapLibre FilterSpecification — must be compatible with maplibre-gl's type. */
+export type ClusterFilterSpec = unknown[];
+
+/**
+ * Returns the base visibility filter for cluster circle layers (glow,
+ * hit-area, bubble).  When {@link suppressed} is true the filter is a
+ * never-true literal comparison; otherwise it is the standard
+ * `["has", "point_count"]` guard.
+ *
+ * Suppression is triggered when the user has an active selection AND the map
+ * is zoomed in past the overview threshold — see FireMap.tsx for the boolean
+ * derivation and its zoom-threshold rationale.
+ */
+export function getClusterVisibilityFilter(suppressed: boolean): ClusterFilterSpec {
+  if (suppressed) return ["==", ["literal", 1], ["literal", 0]];
+  return ["has", "point_count"];
+}
+
+/**
+ * Returns the visibility filter for the cluster count label layer.  Composes
+ * {@link getClusterVisibilityFilter} with the existing "≥4 detections" rule
+ * so a count label cannot render without the bubble it belongs to.
+ */
+export function getClusterCountFilter(suppressed: boolean): ClusterFilterSpec {
+  return [
+    "all",
+    getClusterVisibilityFilter(suppressed),
+    [">=", ["get", "point_count"], 4],
+  ];
+}
+
 export function getSatelliteLayerPlan(layers: readonly StyleLayerLike[]): SatelliteLayerPlan {
   // Preserve provider labels and administrative boundaries above imagery.
   // The bathymetry and water-tint layers are positioned relative to the raster
