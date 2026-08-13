@@ -7,13 +7,24 @@ import {
   MAX_POINTS,
   SPREAD_TIER_FRP_FLOOR_MW,
   PRIORITY_REGIONS,
+  HIGH_FRP_TIER_POINTS,
+  RECURRENCE_CELL_DEGREES,
+  RECURRENCE_WINDOW_RUNS,
+  RECURRENCE_MAX_CELLS,
+  RECURRENCE_FRP_ESCAPE_MW,
+  consumeFirmsCsvStream,
   type ParsedRow,
 } from "./firms-ingest";
+import { parseCsv } from "../src/lib/wildfire/firms-csv";
 import {
+  FIRMS_CACHE_KEY,
+  FIRMS_INGEST_HEALTH_KEY,
+  FIRMS_RECURRENCE_HISTORY_KEY,
   FIRMS_MIN_GLOBAL_POINTS,
   isGlobalFirmsCachePayload,
   type CachedFirmsPoint,
   type FirmsCachePayload,
+  type RecurrenceHistory,
 } from "../src/lib/wildfire/firms-cache";
 
 const BASE_TIME = Date.parse("2026-08-01T00:00:00Z");

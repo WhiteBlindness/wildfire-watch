@@ -82,11 +82,16 @@ test("creates one 375 m square for every raw selected hotspot", () => {
 });
 
 test("matches Turf's exact geodesic buffer, bbox, and bboxPolygon sequence", () => {
+  // eventsToViirsPixelGeoJSON draws nominal-size pixels (no scan/track available
+  // on the HeatmapPoint path) — so the pipeline must be byte-identical to the
+  // original single-buffer sequence: buffer(187.5 m) → bbox → bboxPolygon.
   const event = makeEvent();
   const hotspot = event.heatmapPoints[0];
   const buffered = buffer(point([hotspot.lng, hotspot.lat]), 187.5, { units: "meters" });
 
   assert.ok(buffered, "Turf should buffer a valid VIIRS hotspot");
+  // For the nominal (square) case, separate scan and track buffers are equal so
+  // their combined bbox is identical to the single-buffer bbox.
   const expectedSquare = bboxPolygon(bbox(buffered));
 
   const result = eventsToViirsPixelGeoJSON([event], [event.id]);
@@ -236,6 +241,8 @@ test("returns an empty collection without a selected fire or raw points", () => 
 // ---------------------------------------------------------------------------
 
 function makePoint(overrides: Partial<CachedFirmsPoint> = {}): CachedFirmsPoint {
+  // scanKm / trackKm are intentionally absent in the base fixture so that tests
+  // without explicit overrides exercise the nominal-fallback path.
   return {
     id: "firms-abc123",
     lat: 40.2,
@@ -317,20 +324,95 @@ test("pointsToViirsPixelGeoJSON returns empty collection for empty input", () =>
   assert.deepEqual(result, { type: "FeatureCollection", features: [] });
 });
 
-test("pointsToViirsPixelGeoJSON produces 375 m squares matching the shared geometry pipeline", () => {
+test("pointsToViirsPixelGeoJSON produces 375 m squares matching the shared geometry pipeline (nominal, no scan/track)", () => {
+  // Regression guard: a detection with no scan/track must produce the same
+  // geometry as the original single-buffer pipeline — point → buffer(187.5 m)
+  // → bbox → bboxPolygon — emitted at the snapped cell centre.
   const p = makePoint({ lat: 40.2, lng: -8.6 });
   const result = pointsToViirsPixelGeoJSON([p]);
 
-  // The geometry pipeline is point → buffer(187.5 m) → bbox → bboxPolygon.
-  // After grid-snapping, the square is emitted at the CELL CENTRE coordinate,
-  // not at the raw detection coordinate, so the expected square must be built
-  // from the snapped centre — not from the raw (40.2, -8.6) input.
   const { cellCentLat, cellCentLng } = testSnapToGrid(p.lat, p.lng);
   const buffered = buffer(point([cellCentLng, cellCentLat]), 187.5, { units: "meters" });
   assert.ok(buffered, "turf should buffer a valid VIIRS hotspot");
+  // For the nominal square case the scan buffer = track buffer = single buffer,
+  // so combined bbox equals the single-buffer bbox exactly.
   const expectedSquare = bboxPolygon(bbox(buffered));
 
   assert.deepEqual(result.features[0].geometry, expectedSquare.geometry);
+});
+
+test("pointsToViirsPixelGeoJSON with explicit nominal scan/track produces the same geometry as the no-scan/track path", () => {
+  // A detection with scanKm=0.375 and trackKm=0.375 (the nadir nominal) must
+  // produce byte-identical output to one with no scan/track fields at all.
+  const { cellCentLat, cellCentLng } = testSnapToGrid(40.2, -8.6);
+  const withNominal = makePoint({ lat: cellCentLat, lng: cellCentLng, scanKm: 0.375, trackKm: 0.375 });
+  const withoutDims = makePoint({ lat: cellCentLat, lng: cellCentLng });
+
+  const resultWith = pointsToViirsPixelGeoJSON([withNominal]);
+  const resultWithout = pointsToViirsPixelGeoJSON([withoutDims]);
+
+  assert.deepEqual(
+    resultWith.features[0].geometry,
+    resultWithout.features[0].geometry,
+    "explicit nominal scan/track must match the no-field fallback geometry exactly",
+  );
+});
+
+test("pointsToViirsPixelGeoJSON edge-of-swath detection (scan=0.65 km) draws a visibly wider E-W footprint", () => {
+  // An edge-of-swath detection with scan=0.65 km should produce an E-W width
+  // of 650 m while the N-S height stays at the nominal 375 m (track=0.375 km).
+  // This confirms that scan/track are actually used rather than silently dropped.
+  const p = makePoint({ lat: 40.2, lng: -8.6, scanKm: 0.65, trackKm: 0.375 });
+  const result = pointsToViirsPixelGeoJSON([p]);
+
+  assert.equal(result.features.length, 1);
+  const geom = result.features[0].geometry;
+  assert.equal(geom.type, "Polygon");
+
+  if (geom.type === "Polygon") {
+    const ring = geom.coordinates[0];
+    // Ring layout from bboxPolygon: [SW, SE, NE, NW, SW]
+    // E-W width: distance from SW to SE (or NW to NE).
+    const ewWidthM = distance(point(ring[0]), point(ring[1]), { units: "meters" });
+    // N-S height: distance from SW to NW (or SE to NE).
+    const nsHeightM = distance(point(ring[0]), point(ring[3]), { units: "meters" });
+
+    assert.ok(
+      Math.abs(ewWidthM - 650) < 2,
+      `expected E-W width ≈ 650 m for scan=0.65 km, got ${ewWidthM.toFixed(1)} m`,
+    );
+    assert.ok(
+      Math.abs(nsHeightM - 375) < 2,
+      `expected N-S height ≈ 375 m for track=0.375 km (nominal), got ${nsHeightM.toFixed(1)} m`,
+    );
+  }
+});
+
+test("pointsToViirsPixelGeoJSON detection with missing scan/track falls back to nominal 375 m square", () => {
+  // A detection with no scanKm/trackKm fields must produce a 375 m × 375 m
+  // square — the documented nominal nadir footprint.  This is the backward-
+  // compat / deploy-gap guard: old KV payloads without these fields must render
+  // identically to today's output.
+  const p = makePoint({ lat: 40.2, lng: -8.6 });
+  // Explicitly confirm the fixture has no scan/track fields.
+  assert.equal(p.scanKm, undefined);
+  assert.equal(p.trackKm, undefined);
+
+  const result = pointsToViirsPixelGeoJSON([p]);
+  assert.equal(result.features.length, 1);
+  const geom = result.features[0].geometry;
+  assert.equal(geom.type, "Polygon");
+
+  if (geom.type === "Polygon") {
+    const ring = geom.coordinates[0];
+    for (let i = 0; i < 4; i += 1) {
+      const sideM = distance(point(ring[i]), point(ring[i + 1]), { units: "meters" });
+      assert.ok(
+        Math.abs(sideM - 375) < 1,
+        `missing scan/track: expected nominal side ${i + 1} = 375 m, got ${sideM.toFixed(2)} m`,
+      );
+    }
+  }
 });
 
 test("pointsToViirsPixelGeoJSON per-point FRP varies independently across the collection", () => {

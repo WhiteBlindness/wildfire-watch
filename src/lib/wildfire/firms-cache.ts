@@ -2,6 +2,21 @@ import { lookupPlace } from "./geo-lookup";
 import type { FireSeverity, WildfireEvent } from "./types";
 
 export const FIRMS_CACHE_KEY = "active-fires:v1";
+
+/**
+ * Separate key for ingest health records. Must never equal FIRMS_CACHE_KEY so a
+ * health-write can never overwrite a good snapshot. No TTL is set on either key
+ * by design — the last known state survives worker restarts.
+ */
+export const FIRMS_INGEST_HEALTH_KEY = "active-fires:ingest-health:v1";
+
+/**
+ * Rolling recurrence history key. Stores how often each coarse grid cell has
+ * produced detections across recent ingest runs, used by the persistent-source
+ * suppression heuristic (Task 3).
+ */
+export const FIRMS_RECURRENCE_HISTORY_KEY = "active-fires:recurrence-history:v1";
+
 /**
  * A worldwide VIIRS NRT response normally contains tens of thousands of
  * rows; the current ingest budget is 15,000 points.  This threshold
@@ -24,6 +39,18 @@ export interface CachedFirmsPoint {
   frpMw: number;
   confidencePct: number;
   detectedAt: string;
+  /**
+   * Along-scan (roughly E-W) pixel dimension in km, as reported by the FIRMS
+   * CSV `scan` column.  Absent on payloads written before this field was added
+   * and on feeds that do not include the column.  When absent, consumers fall
+   * back to the nominal VIIRS nadir resolution (0.375 km).
+   */
+  scanKm?: number;
+  /**
+   * Along-track (roughly N-S) pixel dimension in km, as reported by the FIRMS
+   * CSV `track` column.  Same optionality contract as scanKm.
+   */
+  trackKm?: number;
 }
 
 export interface FirmsCachePayload {
@@ -33,6 +60,49 @@ export interface FirmsCachePayload {
   sourceRows: number;
   filteredRows: number;
   points: CachedFirmsPoint[];
+}
+
+/**
+ * Outcome of a single ingest attempt, stored under FIRMS_INGEST_HEALTH_KEY.
+ * The FIRMS_MAP_KEY is never recorded here — error reasons are classified to
+ * short codes to prevent the API key from leaking through the health endpoint.
+ */
+export interface IngestHealth {
+  attemptedAt: string;
+  outcome: "success" | "failure";
+  /** Short error code, never the raw error message (which might contain the map key). */
+  errorCode?: "network" | "http_error" | "incomplete_feed" | "parse_error" | "unknown";
+  sourceRows?: number;
+  filteredRows?: number;
+  selectedPoints?: number;
+  suppressedRows?: number;
+}
+
+/**
+ * Per-cell recurrence record (kept compact to stay within the max-cell cap).
+ */
+export interface CellRecurrenceRecord {
+  /** How many of the last N ingest runs saw detections in this cell. */
+  recentHits: number;
+  /** Total runs observed since the cell was first seen. */
+  totalRuns: number;
+  /** Timestamp of last detection, ISO string. */
+  lastSeenAt: string;
+}
+
+/**
+ * Full recurrence history stored in KV under FIRMS_RECURRENCE_HISTORY_KEY.
+ * Max cell count is enforced during every write by evicting the least-recently-
+ * seen cells if the map would exceed RECURRENCE_MAX_CELLS entries.
+ */
+export interface RecurrenceHistory {
+  /**
+   * Key format: `${latBucket},${lngBucket}` where buckets are 0.5° grid cells.
+   * This matches RECURRENCE_CELL_DEGREES in firms-ingest.ts.
+   */
+  cells: Record<string, CellRecurrenceRecord>;
+  /** How many ingest runs have contributed to this history. */
+  totalRuns: number;
 }
 
 function severityFromFrp(frpMw: number): FireSeverity {
@@ -80,6 +150,20 @@ export function cachedPointToEvent(point: CachedFirmsPoint, generatedAt: string)
   };
 }
 
+/**
+ * Validate that a per-km dimension field is acceptable when present.
+ * Returns true when the field is absent (undefined) OR when it is a finite
+ * number within the documented VIIRS pixel range.  This deliberately mirrors
+ * the clamp limits in firms-csv.ts so a freshly-written point can never fail
+ * its own validation; old payloads without the field also pass unconditionally.
+ */
+function isValidOptionalDimKm(value: unknown): boolean {
+  if (value === undefined) return true;
+  // Import constants are not available here (circular-module risk), so inline
+  // the same limits used in firms-csv.ts (0.3 km min, 2.0 km max).
+  return typeof value === "number" && Number.isFinite(value) && value >= 0.3 && value <= 2.0;
+}
+
 export function isFirmsCachePayload(value: unknown): value is FirmsCachePayload {
   if (!value || typeof value !== "object") return false;
   const payload = value as Partial<FirmsCachePayload>;
@@ -110,7 +194,12 @@ export function isFirmsCachePayload(value: unknown): value is FirmsCachePayload 
         && confidencePct >= 0
         && confidencePct <= 100
         && typeof candidate.detectedAt === "string"
-        && Number.isFinite(Date.parse(candidate.detectedAt));
+        && Number.isFinite(Date.parse(candidate.detectedAt))
+        // scanKm and trackKm are OPTIONAL — absent on payloads written before
+        // this field was introduced.  Validate only when present so old KV
+        // snapshots continue to pass without a cron-forced refresh.
+        && isValidOptionalDimKm(candidate.scanKm)
+        && isValidOptionalDimKm(candidate.trackKm);
     });
 }
 
