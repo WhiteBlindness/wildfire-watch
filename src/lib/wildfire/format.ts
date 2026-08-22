@@ -10,3 +10,19 @@ export function formatThousands(value: number): string {
   const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, THOUSANDS_SEPARATOR);
   return sign + grouped;
 }
+
+export type ConfidenceLevel = "low" | "nominal" | "high";
+
+/**
+ * VIIRS confidence is a categorical field — the FIRMS CSV reports it as
+ * l/n/h and firms-csv.ts maps those onto 30/65/90. Rendering it as a precise
+ * percentage ("65%") is manufactured precision that the raw sensor never
+ * carried. This collapses the stored number back onto the three real levels so
+ * the UI can show a named class instead. Thresholds bracket the three canonical
+ * values (30, 65, 90) while still classing any genuinely numeric source feed.
+ */
+export function confidenceLevel(pct: number): ConfidenceLevel {
+  if (pct < 50) return "low";
+  if (pct < 80) return "nominal";
+  return "high";
+}

@@ -7,7 +7,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
 import { eventsToClusterSelection, eventToSelection } from "@/lib/wildfire/selection";
 import { eventsToTemporalMarkerGeoJSON } from "@/lib/wildfire/temporal";
-import { eventsToViirsPixelGeoJSON, pointsToViirsPixelGeoJSON } from "@/lib/wildfire/viirs";
+import { pointsToViirsPixelGeoJSON } from "@/lib/wildfire/viirs";
+import { eventsToDensityPoints, pointsToThermalDensityGeoJSON } from "@/lib/wildfire/density";
+import { buildGeographyLabelGeoJSON } from "@/lib/geography";
 import { fetchFireDetailPoints } from "@/lib/wildfire/firms-adapter";
 import type { CachedFirmsPoint } from "@/lib/wildfire/firms-cache";
 import { SEVERITY_COLOR } from "@/lib/wildfire/colors";
@@ -32,8 +34,43 @@ const CLUSTER_GLOW_LAYER_ID = "major-fire-events-glow";
 const CLUSTER_HIT_AREA_LAYER_ID = "major-fire-events-hit-area";
 const CLUSTER_COUNT_LAYER_ID = "major-fire-events-count";
 const MARKER_SOURCE_ID = "fire-markers-src";
-const SELECTED_PIXEL_SOURCE_ID = "selected-viirs-pixels-src";
-const SELECTED_PIXEL_FILL_LAYER_ID = "selected-viirs-pixels-fill";
+const DENSITY_SOURCE_ID = "thermal-density-src";
+const DENSITY_HEATMAP_LAYER_ID = "thermal-density-heatmap";
+const FOOTPRINT_SOURCE_ID = "viirs-footprint-src";
+const FOOTPRINT_OUTLINE_LAYER_ID = "viirs-footprint-outline";
+const GEOGRAPHY_SOURCE_ID = "geography-labels-src";
+const GEOGRAPHY_LAYER_PREFIX = "geography-label-tier-";
+
+// The zoom at or above which individual 375 m sensor footprints are revealed as
+// a thin outline beneath the density field — honest instrumentation for
+// advanced users, not the primary representation.
+const FOOTPRINT_MIN_ZOOM = 14;
+
+// The density heatmap draws from this zoom up. It is intentionally BELOW the
+// marker handover (VIIRS_MOSAIC_MIN_ZOOM = 11) so a selected fire's field stays
+// visible wherever the detail-arrival camera fit lands — that fit can frame a
+// wide burn between zoom 5 and 12 (DETAIL_MOSAIC_MIN/MAX_ZOOM), which would
+// otherwise fall into a dead band below 11 where both the field and the
+// (deliberately excluded) selected marker are hidden. This does NOT produce a
+// global low-zoom blur: the snapshot-wide density path self-gates on
+// mosaicBounds, which is null below zoom 11, so with no selection nothing draws
+// here and the clusters still own the low zooms.
+const DENSITY_MIN_ZOOM = 5;
+
+// Empty collections reused as stable identities so a memo that produces "nothing
+// to draw" never allocates a fresh object and forces a needless source update.
+const EMPTY_POINT_FC: GeoJSON.FeatureCollection<GeoJSON.Point> = { type: "FeatureCollection", features: [] };
+const EMPTY_FOOTPRINT_FC: GeoJSON.FeatureCollection<GeoJSON.Geometry> = { type: "FeatureCollection", features: [] };
+
+// Physical-geography labels (mountain ranges, peaks, volcanoes) are static and
+// international; build the label FeatureCollection once at module load. Each
+// feature carries a per-feature minZoom so it can be assigned to the matching
+// zoom tier below. See src/lib/geography.
+const GEOGRAPHY_LABELS = buildGeographyLabelGeoJSON();
+// Distinct integer minZoom tiers present in the data. One symbol layer per tier
+// (each with its own layer-level minzoom) reproduces per-feature zoom gating,
+// which MapLibre filters cannot express because ["zoom"] is disallowed there.
+const GEOGRAPHY_TIERS = [...new Set(GEOGRAPHY_LABELS.features.map((f) => f.properties.minZoom))].sort((a, b) => a - b);
 // Cluster and marker hit areas retain broad pointer targets while selected
 // detections render separately as sensor-sized polygons.
 const INTERACTIVE_LAYER_IDS = [
@@ -260,59 +297,74 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
 
   const selectedFireEventIds = selectedFire?.eventIds;
 
-  // Low-resolution fallback pixel data derived from the globally-downsampled
-  // perimeterEvents snapshot. Shown immediately on selection and kept as a
-  // fallback if the full-resolution fetch fails.
-  const lowResPixelData = useMemo(
-    () => selectedFireEventIds
-      ? eventsToViirsPixelGeoJSON(perimeterEvents, selectedFireEventIds)
-      : { type: "FeatureCollection" as const, features: [] },
+  // Low-resolution thermal-density field derived from the globally-downsampled
+  // perimeterEvents snapshot for the selected fire. Shown immediately on
+  // selection and kept as a fallback if the full-resolution fetch fails. This
+  // is a smooth GPU density field, NOT a measured perimeter — see density.ts
+  // for the weight model (FRP × recency × confidence).
+  const lowResDensityData = useMemo(
+    () => {
+      if (!selectedFireEventIds || selectedFireEventIds.length === 0) {
+        return EMPTY_POINT_FC;
+      }
+      const selectedIds = new Set(selectedFireEventIds);
+      return pointsToThermalDensityGeoJSON(
+        eventsToDensityPoints(perimeterEvents.filter((event) => selectedIds.has(event.id))),
+      );
+    },
     [perimeterEvents, selectedFireEventIds],
   );
 
-  // Above the handover zoom the mosaic must stand on its own, because the
+  // Above the handover zoom the field must stand on its own, because the
   // circles are gone and the map would otherwise be empty for anyone who has
-  // not tapped a fire. Derive footprints for every visible detection from the
-  // snapshot so the matrix is a function of zoom, not of selection state.
+  // not tapped a fire. Derive a density point for every visible detection from
+  // the snapshot so the field is a function of zoom, not of selection state.
   //
-  // Scoped to mosaicBounds rather than the whole snapshot: this builds a
-  // geodesic buffer per detection, far too costly to run for the entire world
-  // on every feed update when only the viewport is ever drawn.
-  const snapshotPixelData = useMemo(
+  // Scoped to mosaicBounds so the source stays small over a dense country.
+  // Unlike the former square mosaic, density needs NO per-detection geodesic
+  // buffer, so this path is far cheaper than the ~209 ms footprint build it
+  // replaces — the viewport scoping is now just source-size hygiene, not a
+  // hard performance requirement.
+  const snapshotDensityData = useMemo(
     () => {
-      if (!mosaicBounds) return { type: "FeatureCollection" as const, features: [] };
+      if (!mosaicBounds) return EMPTY_POINT_FC;
       const [west, south, east, north] = mosaicBounds;
-      return pointsToViirsPixelGeoJSON(events
-        .filter((event) => {
-          const { lng, lat } = event.location;
-          return lng >= west && lng <= east && lat >= south && lat <= north;
-        })
-        .map((event) => ({
-          id: event.id,
-          lat: event.location.lat,
-          lng: event.location.lng,
-          frpMw: event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 0,
-          confidencePct: event.satelliteDetection?.confidencePct ?? 0,
-          detectedAt: event.satelliteDetection?.detectedAt ?? event.startedAt,
-        })));
+      const inView = events.filter((event) => {
+        const { lng, lat } = event.location;
+        return lng >= west && lng <= east && lat >= south && lat <= north;
+      });
+      return pointsToThermalDensityGeoJSON(eventsToDensityPoints(inView));
     },
     [events, mosaicBounds],
   );
 
-  // Full-resolution pixel data fetched from /api/fires/detail. null means
-  // "not yet loaded or selection cleared"; on success it replaces lowResPixelData.
+  // Full-resolution detections fetched from /api/fires/detail. null means
+  // "not yet loaded or selection cleared".
   const [detailPoints, setDetailPoints] = useState<CachedFirmsPoint[] | null>(null);
 
+  // Full-resolution density field for the selected fire (the primary organic
+  // representation at close zoom).
+  const detailDensityData = useMemo(
+    () => detailPoints ? pointsToThermalDensityGeoJSON(detailPoints) : null,
+    [detailPoints],
+  );
+
+  // Full-resolution native VIIRS footprints, kept ONLY for the very-close-zoom
+  // outline layer (honest sensor instrumentation) and for camera framing.
   const detailPixelData = useMemo(
     () => detailPoints ? pointsToViirsPixelGeoJSON(detailPoints) : null,
     [detailPoints],
   );
 
-  // Densest available wins: the full-resolution fetch for the selected fire,
-  // else that fire's low-res footprints while the fetch is in flight or after a
-  // failure, else the snapshot-wide matrix so zooming in always yields squares.
-  const selectedPixelData = detailPixelData
-    ?? (lowResPixelData.features.length > 0 ? lowResPixelData : snapshotPixelData);
+  // Densest available wins: the full-resolution field for the selected fire,
+  // else that fire's low-res field while the fetch is in flight or after a
+  // failure, else the snapshot-wide field so zooming in always shows activity.
+  const densityData = detailDensityData
+    ?? (lowResDensityData.features.length > 0 ? lowResDensityData : snapshotDensityData);
+
+  // Thin 375 m footprint outlines, drawn only from full-resolution detail at
+  // very close zoom as subtle instrumentation beneath the density field.
+  const footprintData = detailPixelData ?? EMPTY_FOOTPRINT_FC;
 
   const markerData = useMemo(() => eventsToTemporalMarkerGeoJSON(events, timelineHour), [events, timelineHour]);
 
@@ -722,6 +774,48 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
       <ScaleControl position="bottom-right" unit="metric" />
       {/* Satellite raster is managed imperatively beneath vector overlays. */}
 
+      {/* Physical-geography labels (serras, peaks, volcanoes). Placed before the
+          fire markers so critical fire information always draws on top, yet
+          above the CARTO base symbols so MapLibre's collision engine makes them
+          yield to city/road labels automatically. One symbol layer per zoom
+          tier reproduces per-feature minZoom gating (filters cannot read
+          ["zoom"]). Names are proper nouns from Natural Earth (public domain) +
+          a curated volcano seed; the category words live in the i18n panel. */}
+      <Source id={GEOGRAPHY_SOURCE_ID} type="geojson" data={GEOGRAPHY_LABELS}>
+        {GEOGRAPHY_TIERS.map((tier) => (
+          <Layer
+            key={tier}
+            id={`${GEOGRAPHY_LAYER_PREFIX}${tier}`}
+            type="symbol"
+            minzoom={tier}
+            filter={["==", ["get", "minZoom"], tier]}
+            layout={{
+              "text-field": ["get", "name"],
+              // Font stack with a fallback so labels still render if a basemap
+              // style (e.g. positron in plain light mode) lacks the Semibold face.
+              "text-font": ["Open Sans Semibold", "Open Sans Regular"],
+              "text-size": ["match", ["get", "kind"], "range", 13, "volcano", 12, 11],
+              "text-letter-spacing": ["match", ["get", "kind"], "range", 0.16, 0.02],
+              "text-transform": ["match", ["get", "kind"], "range", "uppercase", "none"],
+              "text-max-width": 7,
+              // Lower sort key places first and wins collision, so higher
+              // priority features survive when labels compete for space.
+              "symbol-sort-key": ["-", 0, ["get", "priority"]],
+            }}
+            paint={{
+              // Cool, restrained terrain palette so labels never read as active
+              // fire; volcanoes get a slightly warmer stone tone to distinguish
+              // them without implying they are burning.
+              "text-color": ["match", ["get", "kind"], "volcano", "#f0c9a8", "range", "#dbe4ee", "#cdd7e3"],
+              "text-opacity": 0.85,
+              "text-halo-color": "rgba(8,12,22,0.85)",
+              "text-halo-width": 1.2,
+              "text-halo-blur": 0.4,
+            }}
+          />
+        ))}
+      </Source>
+
       {/* Native clusters replace the former 6,000-point macro heatmap. */}
 
       <Source
@@ -869,60 +963,69 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         />
       </Source>
 
-      {/* Selected raw detections become native VIIRS footprints. This source
-          is separate from the timeline-filtered marker source so the grid
-          remains visible while the global chronology is scrubbed.
-          On selection: low-res fallback renders immediately while the
-          full-resolution fetch from /api/fires/detail is in flight. On
-          success: swaps to the dense per-pixel mosaic. On failure: keeps
-          the low-res data and logs to the console. */}
-      <Source id={SELECTED_PIXEL_SOURCE_ID} type="geojson" data={selectedPixelData}>
-        {/* Colour ramp calibrated against measured VIIRS FRP distribution
-            (795 live detections, 3 active fires):
-              p10=1.2 MW, p25=1.8, p50=3.5, p75=7.9, p90=15.2,
-              p95=18.3, p99=28.4, max≈132
-            The ramp is logarithmic/percentile-aware rather than linear:
-            a linear 0-185 MW ramp fails because 98% of pixels fall below
-            10 MW and would render as near-white.
-            Band coverage with these stops:
-              0-1 MW   cream        8.3%  (p0-p8)   — scattered fringe speckle
-              1-1.5    pale lemon   9.2%  (p8-p18)  } ~17.5% pale total
-              1.5-2.5  pale yellow  17.8% (p18-p35) — warming transition
-              2.5-5    amber        23.2% (p35-p59) — median fire pixel
-              5-9      orange       18.7% (p59-p77) — above-average heat
-              9-18     deep orange  17.3% (p77-p95) — intense cores
-              18-50    red-orange    4.7% (p95-p99) — exceptional pixels
-              50-150   red           0.8% (p99-p100)— rare extremes
-              150+     deep red      ~0%             — catastrophic events
-            No hard steps — all transitions are linearly interpolated.
-            fill-antialias: false keeps pixel edges crisp (no sub-pixel AA
-            bleeding between ~6 px squares). */}
+      {/* Thermal-density field — the primary close-zoom representation, taking
+          over from the circular markers at exactly VIIRS_MOSAIC_MIN_ZOOM. This
+          is a native GPU heatmap fed by RAW detection points (density.ts),
+          never grid-snapped squares, so there are zero seams by construction.
+          What it represents: thermal-detection density weighted by FRP,
+          recency, and confidence — an estimated activity field, NOT a measured
+          fire perimeter. The panel states this provenance explicitly. */}
+      <Source id={DENSITY_SOURCE_ID} type="geojson" data={densityData}>
         <Layer
-          id={SELECTED_PIXEL_FILL_LAYER_ID}
-          type="fill"
-          minzoom={VIIRS_MOSAIC_MIN_ZOOM}
+          id={DENSITY_HEATMAP_LAYER_ID}
+          type="heatmap"
+          minzoom={DENSITY_MIN_ZOOM}
           paint={{
-            "fill-color": [
-              "interpolate", ["linear"], ["coalesce", ["get", "frp"], 0],
-              0,   "#fffef5",   // cream — coolest detections, scattered fringe speckle
-              1,   "#fef9c3",   // pale lemon
-              1.5, "#fde68a",   // pale yellow — warming into amber
-              2.5, "#fbbf24",   // amber — median fire pixel (p35-p59)
-              5,   "#f97316",   // orange — above-average heat (p59-p77)
-              9,   "#ea580c",   // deep orange — intense cores (p77-p95)
-              18,  "#dc2626",   // red-orange — only at p95+ (18 MW)
-              50,  "#b91c1c",   // red — rare extremes, p99+
-              150, "#991b1b",   // deep red — catastrophic events only
+            // Per-point weight (0..1) from the FRP × recency × confidence model.
+            "heatmap-weight": ["coalesce", ["get", "weight"], 0.1],
+            // As the radius grows with zoom the same weight is spread over more
+            // pixels, so density falls; lift intensity as you zoom in to hold a
+            // legible field. Higher at the wide end (a spread fire framed at
+            // ~z10 has its points thinned on screen and needs the boost).
+            // Calibrated by eye in-browser.
+            "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 8, 2.2, VIIRS_MOSAIC_MIN_ZOOM, 1.8, 13, 2.8, 16, 5],
+            // Radius is in SCREEN pixels, so a fixed value would decouple the
+            // blob from the ground as you zoom. This ramp keeps a roughly
+            // ground-locked kernel of a few VIIRS pixels — large enough to erase
+            // the grid and merge neighbouring detections into a continuous
+            // activity zone, small enough that it reads as an inferred density
+            // field, never a measured perimeter (which the panel states). At
+            // zoom 11 a 375 m pixel is ~6 px, so ~24 px ≈ 4 sensor pixels.
+            "heatmap-radius": ["interpolate", ["exponential", 1.8], ["zoom"], 9, 16, VIIRS_MOSAIC_MIN_ZOOM, 24, 13, 48, 16, 220],
+            // Amber (outer, diffuse) → orange → red (saturated core). Alpha
+            // ramps from fully transparent at the low-density fringe so the
+            // boundary feathers out and the satellite imagery stays readable.
+            "heatmap-color": [
+              "interpolate", ["linear"], ["heatmap-density"],
+              0.0, "rgba(0,0,0,0)",
+              0.08, "rgba(254,240,138,0.30)", // pale amber — soft diffuse edge
+              0.25, "rgba(251,191,36,0.62)",  // amber — outer activity zone
+              0.45, "rgba(249,115,22,0.78)",  // orange — active region
+              0.65, "rgba(234,88,12,0.88)",   // deep orange — strong activity
+              0.85, "rgba(220,38,38,0.93)",   // red — intense
+              1.0, "rgba(153,27,27,0.96)",    // deep red — most intense core
             ],
-            "fill-opacity": 0.9,
-            "fill-antialias": false,
+            // Top out below 1 so imagery is never fully buried; ease down at the
+            // closest zoom where the footprint outlines take over the detail.
+            "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 9, 0.88, VIIRS_MOSAIC_MIN_ZOOM, 0.85, 14, 0.72, 16, 0.55],
           }}
         />
-        {/* No border layer: the near-black 1px border previously dominated
-            each ~6px square and darkened the entire mosaic, making it look
-            like a dark-maroon block. Removing it lets the fill colour read
-            cleanly and the squares tessellate into the organic mosaic shape
-            the NASA-FIRMS reference shows. */}
+      </Source>
+
+      {/* Individual 375 m sensor footprints as a thin outline, revealed only at
+          very close zoom beneath the density field. This is honest
+          instrumentation — the real VIIRS footprint — not painted fire, and it
+          is drawn only from full-resolution detail so it is bounded. */}
+      <Source id={FOOTPRINT_SOURCE_ID} type="geojson" data={footprintData}>
+        <Layer
+          id={FOOTPRINT_OUTLINE_LAYER_ID}
+          type="line"
+          minzoom={FOOTPRINT_MIN_ZOOM}
+          paint={{
+            "line-color": "rgba(255,255,255,0.45)",
+            "line-width": 0.6,
+          }}
+        />
       </Source>
       </Map>
     </div>
