@@ -20,6 +20,13 @@ test("the per-detection classification label does not claim a definitive active/
   assert.doesNotMatch(pt.fireDetail.classificationThermalDetection, definitiveFire);
 });
 
+test("detail-path news coverage note does not call an individual NRT detection 'the fire'", () => {
+  // EN previously said "the fire's initial FIRMS acquisition"; this renders for
+  // single-detection selections too, so it must stay hedged (detection/hotspot).
+  assert.doesNotMatch(en.fireDetail.newsCoverageSinceDetection, /\bthe fire('s)?\b/i);
+  assert.doesNotMatch(pt.fireDetail.newsCoverageSinceDetection, /\bincêndio\b/i);
+});
+
 test("European Portuguese spelling: deteção, not detecção", () => {
   assert.match(pt.fireDetail.classificationThermalDetection, /Deteção/);
   assert.doesNotMatch(pt.fireDetail.classificationThermalDetection, /Detecção/);

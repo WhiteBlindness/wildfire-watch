@@ -114,7 +114,7 @@ const en = {
     newsLoading: "Scanning local wildfire coverage...",
     newsUnavailable: "Local news is temporarily unavailable.",
     newsEmpty: "No recent local wildfire coverage found.",
-    newsCoverageSinceDetection: "Coverage is checked from the fire's initial FIRMS acquisition onward.",
+    newsCoverageSinceDetection: "Coverage is checked from this detection's initial FIRMS acquisition onward.",
     newsRetry: "Retry",
     newsSource: "Google News RSS",
     newsOpenLabel: "Open article in a new tab",
