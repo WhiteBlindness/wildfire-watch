@@ -257,7 +257,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
               value={selection.kind === "cluster" ? formatThousands(selection.detectionCount) : confidenceText}
             />
             <Stat label={t.fireDetail.detectedAtLabel} value={formatDateTime(selection.detectedAt)} />
-            <Stat label={t.fireDetail.classificationLabel} value={t.fireDetail.classificationActiveFire} />
+            <Stat label={t.fireDetail.classificationLabel} value={t.fireDetail.classificationThermalDetection} />
           </dl>
           <p className="mt-3 text-xs leading-5 text-foreground/60">
             {selection.kind === "cluster" ? t.fireDetail.clusterAreaNote : t.fireDetail.referencePerimeterNote}

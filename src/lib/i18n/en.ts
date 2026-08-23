@@ -77,7 +77,7 @@ const en = {
     estimatedAreaNote: "Model based on FRP × elapsed time; not an area observed by satellite.",
     startLabel: "Started",
     classificationLabel: "Classification",
-    classificationActiveFire: "Active fire detection",
+    classificationThermalDetection: "Satellite thermal detection",
     classificationThermalAnomaly: "Thermal anomaly",
     confidenceLow: "Low",
     confidenceNominal: "Nominal",

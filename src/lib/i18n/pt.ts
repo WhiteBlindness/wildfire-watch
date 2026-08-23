@@ -77,7 +77,7 @@ const pt: Dictionary = {
     estimatedAreaNote: "Modelo baseado em FRP × tempo decorrido; não é área observada por satélite.",
     startLabel: "Início",
     classificationLabel: "Classificação",
-    classificationActiveFire: "Deteção de incêndio ativa",
+    classificationThermalDetection: "Deteção térmica por satélite",
     classificationThermalAnomaly: "Anomalia térmica",
     confidenceLow: "Baixa",
     confidenceNominal: "Nominal",

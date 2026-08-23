@@ -21,6 +21,7 @@
     "test:fire-detail": "esbuild ./src/app/api/fires/detail/route.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/fire-detail.test.cjs && node ./node_modules/.cache/wildfire-watch/fire-detail.test.cjs",
     "test:density": "esbuild ./src/lib/wildfire/density.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/density.test.cjs && node ./node_modules/.cache/wildfire-watch/density.test.cjs",
     "test:geography": "esbuild ./src/lib/geography/geography.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/geography.test.cjs && node ./node_modules/.cache/wildfire-watch/geography.test.cjs",
+    "test:terminology": "esbuild ./src/lib/i18n/terminology.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/terminology.test.cjs && node ./node_modules/.cache/wildfire-watch/terminology.test.cjs",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
