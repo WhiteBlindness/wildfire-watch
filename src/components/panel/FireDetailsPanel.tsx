@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { FireSelection, FireWeather } from "@/lib/wildfire/types";
-import { formatThousands } from "@/lib/wildfire/format";
+import { confidenceLevel, formatThousands } from "@/lib/wildfire/format";
+import { findNearestRange, findNearestVolcano } from "@/lib/geography";
 import { estimateBurnedAreaHectares } from "@/lib/wildfire/fire-estimation";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireTelemetryDashboard from "./FireTelemetryDashboard";
@@ -31,6 +32,28 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
   const estimatedAreaHectares = useMemo(
     () => estimateBurnedAreaHectares(selection.totalFrpMw, selection.startedAt),
     [selection.startedAt, selection.totalFrpMw],
+  );
+  // VIIRS confidence is categorical (l/n/h → 30/65/90); show the named class,
+  // not a manufactured percentage. Null means the source carried no confidence.
+  const confidenceText = selection.confidencePct == null
+    ? t.fireDetail.notMeasured
+    : ({
+        low: t.fireDetail.confidenceLow,
+        nominal: t.fireDetail.confidenceNominal,
+        high: t.fireDetail.confidenceHigh,
+      } as const)[confidenceLevel(selection.confidencePct)];
+  // Physical-geography orientation. The nearest range is purely informational;
+  // the nearest volcano is surfaced ONLY as proximity context, never as a claim
+  // that the detection is volcanic — the pipeline carries no FIRMS `type` field
+  // to confirm that, so proximity alone cannot establish causality. Distances
+  // are great-circle km.
+  const nearestRange = useMemo(
+    () => findNearestRange(selection.location.lat, selection.location.lng, 150),
+    [selection.location.lat, selection.location.lng],
+  );
+  const nearestVolcano = useMemo(
+    () => findNearestVolcano(selection.location.lat, selection.location.lng, 75),
+    [selection.location.lat, selection.location.lng],
   );
   const fallbackLocationName = useMemo(() => {
     const parts = [selection.region, selection.country].filter(
@@ -231,14 +254,45 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
             <Stat label={selection.kind === "cluster" ? t.fireDetail.combinedFrpLabel : t.fireDetail.frpLabel} value={`${selection.totalFrpMw.toFixed(1)} MW`} />
             <Stat
               label={selection.kind === "cluster" ? t.fireDetail.detectionCountLabel : t.fireDetail.confidenceLabel}
-              value={selection.kind === "cluster" ? formatThousands(selection.detectionCount) : `${Math.round(selection.confidencePct ?? 0)}%`}
+              value={selection.kind === "cluster" ? formatThousands(selection.detectionCount) : confidenceText}
             />
             <Stat label={t.fireDetail.detectedAtLabel} value={formatDateTime(selection.detectedAt)} />
+            <Stat label={t.fireDetail.classificationLabel} value={t.fireDetail.classificationThermalDetection} />
           </dl>
           <p className="mt-3 text-xs leading-5 text-foreground/60">
             {selection.kind === "cluster" ? t.fireDetail.clusterAreaNote : t.fireDetail.referencePerimeterNote}
           </p>
+          <p className="mt-2 text-xs leading-5 text-foreground/50">
+            {t.fireDetail.geometryProvenanceNote}
+          </p>
         </div>
+
+      {(nearestRange || nearestVolcano) && (
+        <div className="rounded-xl bg-surface-muted/40 p-3.5 ring-1 ring-inset ring-border/60">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/60">
+            {t.fireDetail.geographyContextTitle}
+          </h3>
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            {nearestRange && (
+              <Stat
+                label={t.fireDetail.nearestRangeLabel}
+                value={`${nearestRange.feature.name} · ${Math.round(nearestRange.distanceKm)} km`}
+              />
+            )}
+            {nearestVolcano && (
+              <Stat
+                label={t.fireDetail.nearestVolcanoLabel}
+                value={`${nearestVolcano.feature.name} · ${Math.round(nearestVolcano.distanceKm)} km`}
+              />
+            )}
+          </dl>
+          {nearestVolcano && (
+            <p className="mt-3 text-xs leading-5 text-amber-700/80 dark:text-amber-300/70">
+              {t.fireDetail.nearVolcanoNote}
+            </p>
+          )}
+        </div>
+      )}
 
       <FireTelemetryDashboard
         key={selection.id}

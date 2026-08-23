@@ -1,6 +1,11 @@
 {
   "name": "wildfire-watch",
   "main": "workers/app-entry.ts",
+  // The OpenNext output (.open-next/worker.js, imported by workers/app-entry.ts,
+  // plus .open-next/assets) is produced by the Cloudflare Workers Builds *build*
+  // stage running `npm run build:cloudflare`. Wrangler's deploy/upload stage then
+  // only bundles and uploads that already-generated output — it deliberately has
+  // no `build.command`, so OpenNext is built exactly once, in the build stage.
   "compatibility_date": "2025-09-23",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
