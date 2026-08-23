@@ -1,6 +1,14 @@
 {
   "name": "wildfire-watch",
   "main": "workers/app-entry.ts",
+  // Custom build step: generate the OpenNext output (.open-next/worker.js, which
+  // workers/app-entry.ts imports, plus .open-next/assets) before Wrangler
+  // bundles and uploads. This makes `wrangler deploy` / `wrangler versions
+  // upload` self-sufficient — the assets.directory below always exists even if
+  // the Workers Builds dashboard "build command" is left at its default.
+  "build": {
+    "command": "npm run build:cloudflare"
+  },
   "compatibility_date": "2025-09-23",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {

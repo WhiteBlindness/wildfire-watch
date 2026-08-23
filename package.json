@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:cloudflare": "opennextjs-cloudflare build",
     "start": "next start",
     "lint": "eslint",
     "test:map": "esbuild ./src/components/map/mapPresentation.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/map-presentation.test.cjs && node ./node_modules/.cache/wildfire-watch/map-presentation.test.cjs",
