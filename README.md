@@ -4,7 +4,7 @@ A full-screen map of global wildfire activity, updated hourly from NASA FIRMS sa
 
 **Live:** https://wildfire-watch.duartemonteiro.workers.dev
 
-**Status:** Live. The page loaded during verification; the FIRMS feed was still waiting for data.
+**Estado:** *Live*. A página abriu na verificação de 27/09/2026, mas o feed FIRMS ainda aguardava dados.
 
 Click any fire to open a panel with its status, severity, estimated area, wind conditions and nearby air quality. Interface in European Portuguese and English, dark by default.
 
