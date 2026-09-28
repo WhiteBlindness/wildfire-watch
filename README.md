@@ -4,33 +4,33 @@ A full-screen map of global wildfire activity, updated hourly from NASA FIRMS sa
 
 **Live:** https://wildfire-watch.duartemonteiro.workers.dev
 
-**Estado:** *Live*. A página abriu na verificação de 27/09/2026, mas o feed FIRMS ainda aguardava dados.
+**Status:** Live. The page loaded during the last check, but the FIRMS feed was still waiting for data.
 
 Click any fire to open a panel with its status, severity, estimated area, wind conditions and nearby air quality. Interface in European Portuguese and English, dark by default.
 
 ## Motivation
 
-Portugal burns every summer, and the information about it arrives scattered — a news ticker here, a civil protection PDF there, a satellite portal built for researchers rather than for someone wondering whether the smoke on the horizon matters. Meanwhile Flightradar24 has trained everyone to expect that you can just *look at a map* and understand a live global system in ten seconds.
+Portugal burns every summer, but information about a fire can be hard to piece together. It may be split between news tickers, civil protection PDFs, and satellite portals built for researchers rather than people trying to understand smoke on the horizon. Meanwhile, Flightradar24 has shown people that a live system can be understood by looking at a map.
 
 That gap is the whole project: take fire data that already exists in the open and make it legible at a glance, for a casual visitor, in their own language.
 
-It is also deliberately a portfolio piece. Success means a real, working, polished product running on real data — not a demo with a "coming soon" behind every button.
+This is also a portfolio project. The goal is a working product that uses real data, not a demo with a "coming soon" label behind every button.
 
 ## Problems worth solving
 
-**The global feed is too big for a browser.** FIRMS returns every thermal anomaly on Earth for the requested window; naively shipping that would be a multi-megabyte payload of mostly redundant points. Downsampling by simple truncation loses whole regions — sort by intensity and Africa's agricultural burns crowd out everything else. The fix is spatial: bucket detections into a 2° grid and keep the strongest per cell, so geographic coverage survives, then reserve a slice of the budget for the highest-radiative-power fires so the genuinely severe ones can never be binned away by a quiet neighbour.
+**The global feed is too big for a browser.** FIRMS returns every thermal anomaly on Earth for the requested window, which can create a multi-megabyte payload full of redundant points. Simple truncation can drop whole regions. Sorting by intensity alone would let agricultural burns in Africa crowd out other detections. Instead, the Worker groups detections into a 2° grid and keeps the strongest point in each cell. It then reserves part of the data budget for fires with the highest radiative power.
 
-**Satellites report pixels, not fires.** FIRMS gives isolated hot points. Humans think in incidents. Detections have to be clustered into fires, wrapped in a concave hull to suggest a burned area, and aged out as they go stale — none of which the source does for you.
+**Satellites report pixels, not fires.** FIRMS provides isolated hot points, while people look for incidents. The app clusters detections into fire groups, builds a concave hull to suggest the affected area, and removes detections as they age.
 
 **A page load must never wait on NASA.** The upstream API is slow and rate-limited. An hourly Worker cron decouples them: ingestion writes a processed payload to KV, requests only ever read KV. Users never feel the upstream latency, and the map key is never exposed.
 
-**The edge has no Node.** Running Next.js on Cloudflare Workers via OpenNext means no `fs`, no `path`, no Node built-ins anywhere in server code — a constraint that has to be honoured in every dependency choice, not just your own files.
+**The edge has no Node.** Running Next.js on Cloudflare Workers through OpenNext means server code cannot rely on Node built-ins such as `fs` or `path`. Every dependency must respect that constraint.
 
 **Portuguese is not one language.** The UI is European Portuguese, and the most common way that slips is a stray Brazilian form or a gerund construction. That's guarded by a test (`npm run test:language`) rather than by vigilance.
 
 ## Why it's built this way
 
-Wildfire data sources disagree about almost everything — field names, units, confidence scales, update cadence, geographic coverage. The usual result is a UI welded to whichever feed it started with.
+Wildfire data sources differ in field names, units, confidence scales, update frequency, and geographic coverage. Without an adapter layer, the interface tends to depend on whichever feed it started with.
 
 Here every source is mapped into one normalized schema (`src/lib/wildfire/types.ts`) before it reaches a component. The map and panel never learn where a fire came from. Adding EFFIS or the Portuguese civil protection feed means writing an adapter, not touching the UI.
 
@@ -61,7 +61,7 @@ npm install
 npm run dev
 ```
 
-Live FIRMS data needs a NASA map key in `FIRMS_MAP_KEY` (free, from firms.modaps.eosdis.nasa.gov). Without one, set `DATA_SOURCE=mock` in `wrangler.jsonc` to run against the deterministic mock generator — same schema, no network, useful for UI work.
+Live FIRMS data requires a NASA map key in `FIRMS_MAP_KEY` (available free from firms.modaps.eosdis.nasa.gov). Without one, set `DATA_SOURCE=mock` in `wrangler.jsonc` to use the deterministic mock generator. It uses the same schema without a network connection, which is useful for interface work.
 
 ```bash
 npm run test:sampling    # ingest downsampling
@@ -74,4 +74,4 @@ npm run deploy           # build + ship to Cloudflare
 
 ## Status
 
-Live on FIRMS data. EFFIS and ANEPC adapters are the next ones planned — the seams are already there.
+The current live adapter uses FIRMS. EFFIS and ANEPC adapters are planned; the data-source interfaces already allow for them.
