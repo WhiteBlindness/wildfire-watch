@@ -28,7 +28,7 @@ export default function BasemapToggle({
         {satellite ? <Satellite aria-hidden="true" className="h-3.5 w-3.5" /> : <Map aria-hidden="true" className="h-3.5 w-3.5" />}
       </span>
       <span className="mission-basemap-label hidden pr-1 text-xs font-semibold">
-        {satellite ? t.topBar.satelliteLabel : t.topBar.plainLabel}
+        {t.topBar.satelliteLabel}
       </span>
       <span aria-hidden="true" className="relative flex h-5 w-9 shrink-0 items-center overflow-hidden rounded-full border border-neutral-200 bg-neutral-100 ring-1 ring-inset ring-neutral-300 dark:border-neutral-800 dark:bg-neutral-800 dark:ring-neutral-700">
         <span className={`absolute left-[4px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-red-600 transition-transform duration-300 ease-in-out motion-reduce:transition-none dark:bg-red-500 ${satellite ? "translate-x-[14px]" : "translate-x-0"}`} />

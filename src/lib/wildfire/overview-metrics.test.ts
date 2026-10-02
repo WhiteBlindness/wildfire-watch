@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { WildfireEvent } from "./types";
-import { calculateOverviewMetrics, resolveEventIntensityMw } from "./overview-metrics";
+import { calculateOverviewMetrics, resolveEventIntensityMw, selectStrongestEvents } from "./overview-metrics";
 
 function event(
   id: string,
@@ -75,4 +75,18 @@ test("returns null when no valid intensity is available and supports country sub
   const spain = event("es", "Spain", 40, null);
   assert.equal(calculateOverviewMetrics([portugal])?.totalFrpMw, 20);
   assert.equal(calculateOverviewMetrics([spain])?.projectedBurnAreaHectares, 16);
+});
+
+test("lists the strongest detections first and skips events without a valid intensity", () => {
+  const weak = event("weak", "Portugal", 3, null);
+  const strong = event("strong", "Spain", 250, null);
+  const middle = event("middle", "Portugal", 40, null);
+  const unknown = event("unknown", "Portugal", null, null);
+  const input = [weak, unknown, strong, middle];
+
+  assert.deepEqual(selectStrongestEvents(input, 2).map((item) => item.id), ["strong", "middle"]);
+  assert.deepEqual(selectStrongestEvents(input, 10).map((item) => item.id), ["strong", "middle", "weak"]);
+  assert.deepEqual(input.map((item) => item.id), ["weak", "unknown", "strong", "middle"], "input order must not change");
+  assert.deepEqual(selectStrongestEvents([], 5), []);
+  assert.deepEqual(selectStrongestEvents(input, 0), []);
 });

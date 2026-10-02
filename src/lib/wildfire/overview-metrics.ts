@@ -53,3 +53,18 @@ export function calculateOverviewMetrics(events: WildfireEvent[]): OverviewMetri
     validIntensityCount,
   };
 }
+
+/**
+ * The most intense detections in the current scope, strongest first. This is
+ * the panel's keyboard and screen-reader route into individual hotspots, so it
+ * only lists events whose intensity is actually known.
+ */
+export function selectStrongestEvents(events: WildfireEvent[], limit: number): WildfireEvent[] {
+  if (limit <= 0) return [];
+  return events
+    .map((event) => ({ event, intensity: resolveEventIntensityMw(event) }))
+    .filter((entry): entry is { event: WildfireEvent; intensity: number } => entry.intensity !== null)
+    .sort((a, b) => b.intensity - a.intensity)
+    .slice(0, limit)
+    .map((entry) => entry.event);
+}

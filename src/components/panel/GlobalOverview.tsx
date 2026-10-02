@@ -4,16 +4,19 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { FeedLoadStatus, FeedFreshness, WildfireEvent, WildfireFeedSnapshot } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
-import { calculateOverviewMetrics } from "@/lib/wildfire/overview-metrics";
+import { calculateOverviewMetrics, resolveEventIntensityMw, selectStrongestEvents } from "@/lib/wildfire/overview-metrics";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
+import PanelFooter from "./PanelFooter";
 
 const FEED_STALE_AFTER_MS = 90 * 60 * 1000;
+const STRONGEST_EVENT_LIMIT = 5;
 
 interface GlobalOverviewProps {
   events: WildfireEvent[];
   countries: string[];
   selectedCountry: string;
   onCountryChange: (country: string) => void;
+  onSelectEvent: (event: WildfireEvent) => void;
   feedSnapshot: WildfireFeedSnapshot | null;
   feedState: FeedLoadStatus;
 }
@@ -23,6 +26,7 @@ export default function GlobalOverview({
   countries,
   selectedCountry,
   onCountryChange,
+  onSelectEvent,
   feedSnapshot,
   feedState,
 }: GlobalOverviewProps) {
@@ -30,6 +34,7 @@ export default function GlobalOverview({
   const [now, setNow] = useState<number | null>(null);
   const totalFoci = events.length;
   const metrics = useMemo(() => calculateOverviewMetrics(events), [events]);
+  const strongestEvents = useMemo(() => selectStrongestEvents(events, STRONGEST_EVENT_LIMIT), [events]);
   const freshness = useMemo(
     () => getFeedFreshness(feedSnapshot, feedState, now),
     [feedSnapshot, feedState, now],
@@ -72,24 +77,24 @@ export default function GlobalOverview({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/50">{t.overview.sourceLabel}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65">{t.overview.sourceLabel}</p>
             <p className="mt-1 break-words text-sm font-semibold text-foreground">{sourceLabel}</p>
           </div>
           <FreshnessBadge freshness={freshness} labels={t.overview} />
         </div>
         <dl className="mt-3 border-t border-border/45 pt-3 text-xs">
           <div className="min-w-0">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/45">{t.overview.sourceIdentifier}</dt>
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/65">{t.overview.sourceIdentifier}</dt>
             <dd className="mt-1 break-words font-mono text-[11px] tabular-nums text-foreground/75">{sourceId}</dd>
           </div>
         </dl>
         {freshness === "stale" && (
-          <p className="mt-3 text-xs leading-5 text-amber-700/90 dark:text-amber-200/85">{t.overview.staleLastKnown}</p>
+          <p className="mt-3 text-xs leading-5 text-amber-800 dark:text-amber-200">{t.overview.staleLastKnown}</p>
         )}
       </section>
 
       <label className="block">
-        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/50">
+        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/65">
           {t.overview.countryLabel}
         </span>
         <select
@@ -133,7 +138,7 @@ export default function GlobalOverview({
             <time dateTime={feedSnapshot.generatedAt} title={relativeFreshness ?? undefined} className="block">
               <span className="block text-lg leading-tight">{exactTimestamp}</span>
               {relativeFreshness && (
-                <span className="mt-1 block text-[11px] font-medium text-foreground/50">{relativeFreshness}</span>
+                <span className="mt-1 block text-[11px] font-medium text-foreground/65">{relativeFreshness}</span>
               )}
             </time>
           ) : undefined}
@@ -141,9 +146,68 @@ export default function GlobalOverview({
         />
       </div>
 
-      <p className="text-xs text-foreground/50">{t.overview.hint}</p>
+      <p className="text-xs text-foreground/65">{t.overview.hint}</p>
+
+      {feedSnapshot && (
+        <section aria-labelledby="strongest-detections-title">
+          <h3 id="strongest-detections-title" className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65">
+            {t.overview.strongestTitle}
+          </h3>
+          {strongestEvents.length === 0 ? (
+            <p className="text-xs text-foreground/65">{t.overview.strongestEmpty}</p>
+          ) : (
+            <ol className="space-y-1.5">
+              {strongestEvents.map((event) => (
+                <li key={event.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectEvent(event)}
+                    className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-border/60 bg-surface/75 px-3 py-2 text-left transition-colors hover:border-foreground/25 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-medium text-foreground">{formatPlace(event)}</span>
+                      <time dateTime={event.satelliteDetection?.detectedAt ?? event.lastUpdated} className="mt-0.5 block font-mono text-[11px] tabular-nums text-foreground/65">
+                        {formatCoordinates(event)} · {formatDetectionTime(event.satelliteDetection?.detectedAt ?? event.lastUpdated, locale)}
+                      </time>
+                    </span>
+                    <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-foreground">
+                      {formatMegawatts(resolveEventIntensityMw(event) ?? 0, locale)} MW
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
+
+      <PanelFooter />
     </div>
   );
+}
+
+function formatCoordinates(event: WildfireEvent): string {
+  return `${event.location.lat.toFixed(2)}, ${event.location.lng.toFixed(2)}`;
+}
+
+/** Country-level names come from Natural Earth; coordinates tell apart several
+ * hotspots in the same country and stand in for unmatched (offshore) points. */
+function formatPlace(event: WildfireEvent): string {
+  if (!event.country || event.country.includes("unmatched")) return formatCoordinates(event);
+  return event.region && event.region !== event.country ? `${event.region}, ${event.country}` : event.country;
+}
+
+function formatDetectionTime(iso: string, locale: "en" | "pt"): string {
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed)) return "—";
+  return new Intl.DateTimeFormat(locale === "pt" ? "pt-PT" : "en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "UTC",
+    timeZoneName: "short",
+  }).format(new Date(parsed));
 }
 
 type OverviewLabels = {
@@ -217,17 +281,17 @@ function MetricCard({
   return (
     <div className={`rounded-lg border border-border/60 bg-surface/75 p-4 shadow-lg backdrop-blur-xl ${className ?? ""}`}>
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
-        <p className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-wide text-foreground/50">{label}</p>
+        <p className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-wide text-foreground/65">{label}</p>
         {badge && <span className="inline-flex max-w-full min-w-0 shrink items-center justify-center whitespace-normal break-words rounded-full bg-amber-500/12 px-1.5 py-1 text-center font-mono text-[11px] font-semibold leading-tight tabular-nums tracking-[0.08em] text-amber-700 dark:text-amber-300 sm:shrink-0 sm:px-2">{badge}</span>}
       </div>
       <p
         className={`mt-1 font-mono text-2xl font-semibold tabular-nums ${
-          tone === "critical" ? "text-rose-500" : tone === "warning" ? "text-amber-500" : "text-foreground"
+          tone === "critical" ? "text-rose-500" : tone === "warning" ? "text-amber-700 dark:text-amber-400" : "text-foreground"
         }`}
       >
         {valueNode ?? value}
       </p>
-      {note && <p className="mt-2 text-[11px] leading-4 text-foreground/50">{note}</p>}
+      {note && <p className="mt-2 text-[11px] leading-4 text-foreground/65">{note}</p>}
     </div>
   );
 }

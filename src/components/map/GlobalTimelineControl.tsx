@@ -57,14 +57,17 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
             <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-600 dark:text-neutral-400">
               <Rewind aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-red-500 dark:text-red-400" />
               <span className="truncate">{t.timeline.title}</span>
+              {/* The hover title is a convenience for pointer users only; the
+                  same text is the slider's accessible description below, and
+                  the full methodology lives on the About page. */}
               <span
-                tabIndex={isMinimized ? -1 : 0}
-                aria-label={t.timeline.methodologyLabel}
+                aria-hidden="true"
                 title={t.timeline.methodologyText}
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-neutral-500 outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:text-neutral-400"
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-neutral-600 dark:text-neutral-400"
               >
-                <Info aria-hidden="true" className="h-3.5 w-3.5" />
+                <Info className="h-3.5 w-3.5" />
               </span>
+              <span id="global-timeline-methodology" className="sr-only">{t.timeline.methodologyText}</span>
             </span>
             <output className="shrink-0 font-mono text-xs font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{currentLabel}</output>
             <button
@@ -74,13 +77,14 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
               aria-expanded="true"
               tabIndex={isMinimized ? -1 : 0}
               onClick={() => setIsMinimized(true)}
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-[background-color,color,transform] duration-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-neutral-600 transition-[background-color,color,transform] duration-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
             >
               <Minimize2 aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
           </div>
           <input
             aria-label={t.timeline.sliderLabel}
+            aria-describedby="global-timeline-methodology"
             type="range"
             min={0}
             max={GLOBAL_TIMELINE_HOURS}
@@ -91,7 +95,7 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
             style={{ "--timeline-progress": timelineProgress } as CSSProperties}
             className="timeline-slider block h-6 w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/80"
           />
-          <div aria-hidden="true" className="mt-0.5 flex justify-between font-mono text-[11px] font-medium uppercase tabular-nums tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+          <div aria-hidden="true" className="mt-0.5 flex justify-between font-mono text-[11px] font-medium uppercase tabular-nums tracking-[0.08em] text-neutral-600 dark:text-neutral-400">
             <span>T-72h</span>
             <span>T-36h</span>
             <span>{t.timeline.now}</span>
@@ -100,7 +104,7 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
       </div>
       <button
         type="button"
-        aria-label={t.timeline.expandLabel}
+        aria-label={`${t.timeline.expandLabel}, ${currentLabel}`}
         aria-controls="global-timeline-controls"
         aria-expanded="false"
         tabIndex={isMinimized ? 0 : -1}

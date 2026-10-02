@@ -16,6 +16,7 @@ interface SidePanelProps {
   countries: string[];
   selectedCountry: string;
   onCountryChange: (country: string) => void;
+  onSelectEvent: (event: WildfireEvent) => void;
   feedSnapshot: WildfireFeedSnapshot | null;
   feedState: FeedLoadStatus;
 }
@@ -29,6 +30,7 @@ export default function SidePanel({
   countries,
   selectedCountry,
   onCountryChange,
+  onSelectEvent,
   feedSnapshot,
   feedState,
 }: SidePanelProps) {
@@ -70,7 +72,9 @@ export default function SidePanel({
         </button>
       </div>
 
-      <div id="mission-control-panel-content" className="min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-smooth">
+      {/* tabIndex -1: the skip link can move focus here, and keyboard users can
+          scroll the panel without first tabbing to a control inside it. */}
+      <div id="mission-control-panel-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-smooth">
         <div key={selectedFire?.id ?? "overview"} className="min-h-full motion-safe:animate-[panel-content-enter_280ms_ease-out_both]">
           {isDesktop || !isMinimized ? selectedFire ? (
             <FireDetailsPanel selection={selectedFire} onClose={onClose} />
@@ -80,6 +84,7 @@ export default function SidePanel({
               countries={countries}
               selectedCountry={selectedCountry}
               onCountryChange={onCountryChange}
+              onSelectEvent={onSelectEvent}
               feedSnapshot={feedSnapshot}
               feedState={feedState}
             />

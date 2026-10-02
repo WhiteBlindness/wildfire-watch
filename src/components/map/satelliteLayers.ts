@@ -9,7 +9,8 @@ export const OCEAN_BATHYMETRY_LAYER_ID = "ocean-bathymetry";
 const LEGACY_SATELLITE_LAYER_IDS = ["satellite-ocean-mask", "satellite-background"] as const;
 const SATELLITE_TILE_URL =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-const SATELLITE_ATTRIBUTION = "© Esri, Maxar, Earthstar Geographics, and the GIS User Community";
+// Esri asks for "Powered by Esri" alongside the imagery sources.
+const SATELLITE_ATTRIBUTION = "Powered by Esri · Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community";
 
 export const OCEAN_BATHYMETRY_LAYER: AddLayerObject = {
   id: OCEAN_BATHYMETRY_LAYER_ID,

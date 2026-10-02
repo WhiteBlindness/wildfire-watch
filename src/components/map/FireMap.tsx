@@ -21,6 +21,7 @@ import {
   computeDetailCameraTarget,
 } from "./mapPresentation";
 import { syncSatelliteLayers } from "./satelliteLayers";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 // Free, no-API-key vector basemaps from CARTO — dark-matter fits the cinematic
 // dark theme, positron is the light-mode counterpart. Attribution is baked
@@ -236,6 +237,14 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   const mapRef = useRef<MapRef>(null);
   const hasReportedMapLoadRef = useRef(false);
   const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
+  const { t } = useLocale();
+  // MapLibre reads its UI strings once, at construction; the canvas label is
+  // re-applied below so a later language switch still reaches screen readers.
+  const mapUiStrings = useMemo(() => ({
+    "Map.Title": t.map.canvasLabel,
+    "AttributionControl.ToggleAttribution": t.map.toggleAttribution,
+    "AttributionControl.MapFeedback": t.map.mapFeedback,
+  }), [t]);
   const [isHoveringInteractiveFeature, setIsHoveringInteractiveFeature] = useState(false);
   // Tracks whether the viewport is zoomed in past CLUSTER_SUPPRESS_ZOOM_THRESHOLD.
   // Stored as a boolean — not raw zoom — so a zoom event only triggers a
@@ -655,6 +664,10 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     return observeStyleReady(mapInstance, () => applyStyleEnhancements(mapInstance));
   }, [applyStyleEnhancements, mapInstance, mapStyleUrl]);
 
+  useEffect(() => {
+    mapInstance?.getCanvas().setAttribute("aria-label", t.map.canvasLabel);
+  }, [mapInstance, t.map.canvasLabel]);
+
   // One camera transition per selection identity. Point clicks only update
   // selection here; this effect owns their flight so map and panel selection
   // cannot both animate the camera.
@@ -716,6 +729,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
       onMouseLeave={() => setIsHoveringInteractiveFeature(false)}
       cursor={isHoveringInteractiveFeature ? "pointer" : "grab"}
       attributionControl={false}
+      locale={mapUiStrings}
       onLoad={handleLoad}
     >
       <AttributionControl key={basemapMode} compact position="bottom-left" />

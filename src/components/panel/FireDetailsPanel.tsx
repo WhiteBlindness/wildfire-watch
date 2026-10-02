@@ -6,6 +6,7 @@ import { formatThousands } from "@/lib/wildfire/format";
 import { estimateBurnedAreaHectares } from "@/lib/wildfire/fire-estimation";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireTelemetryDashboard from "./FireTelemetryDashboard";
+import PanelFooter from "./PanelFooter";
 
 interface FireDetailsPanelProps {
   selection: FireSelection;
@@ -149,9 +150,9 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
       <button
         type="button"
         onClick={onClose}
-        className="-mx-2 -my-2 flex min-h-11 items-center gap-1.5 self-start rounded-lg px-2 py-2 text-xs font-medium text-foreground/55 transition-[color,background-color,transform] duration-200 hover:bg-surface-muted/60 hover:text-foreground active:translate-x-[-2px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
+        className="-mx-2 -my-2 flex min-h-11 items-center gap-1.5 self-start rounded-lg px-2 py-2 text-xs font-medium text-foreground/65 transition-[color,background-color,transform] duration-200 hover:bg-surface-muted/60 hover:text-foreground active:translate-x-[-2px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
       >
-        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2}>
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2}>
           <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         {t.fireDetail.backToGlobalMap}
@@ -163,7 +164,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
       >
         <div className="grid grid-cols-2 gap-3">
           <div className="min-w-0">
-            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/65">
               {t.fireDetail.locationReadoutLabel}
             </p>
             <p className="mt-1 truncate text-xs font-medium text-foreground/85">
@@ -171,7 +172,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
             </p>
           </div>
           <div className="min-w-0 text-right">
-            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/65">
               {t.fireDetail.dateTimeUtcLabel}
             </p>
             <p className="mt-1 font-mono text-xs font-medium tabular-nums text-foreground/85">
@@ -180,13 +181,13 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
           </div>
         </div>
         <div className="mt-3 border-t border-red-500/15 pt-3">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
+          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/65">
             {t.fireDetail.burnScarReadoutLabel}
           </p>
           <p className="mt-1 font-mono text-xl font-semibold leading-none tabular-nums text-foreground">
-            {formatThousands(estimatedAreaHectares)} <span className="text-xs font-medium text-foreground/55">ha</span>
+            {formatThousands(estimatedAreaHectares)} <span className="text-xs font-medium text-foreground/65">ha</span>
           </p>
-          <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-red-700/70 dark:text-red-300/70">
+          <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-red-700 dark:text-red-300">
             {t.fireDetail.viirsPixelReadoutLabel}
           </p>
         </div>
@@ -195,9 +196,9 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold leading-snug tracking-[-0.02em] text-foreground">
-            {selection.kind === "cluster" ? t.fireDetail.majorEventTitle : selection.name}
+            {selection.kind === "cluster" ? t.fireDetail.clusterTitle : t.fireDetail.pointTitle}
           </h2>
-          <p className="mt-1 text-sm text-foreground/55">
+          <p className="mt-1 text-sm text-foreground/65">
             {locationName ?? fallbackLocationName}
           </p>
         </div>
@@ -205,9 +206,9 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
           type="button"
           onClick={onClose}
           aria-label={t.fireDetail.closeLabel}
-          className="-mr-1 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-muted/55 text-foreground/55 ring-1 ring-inset ring-border/70 transition-[color,background-color,transform] duration-200 hover:bg-surface-muted hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
+          className="-mr-1 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-muted/55 text-foreground/65 ring-1 ring-inset ring-border/70 transition-[color,background-color,transform] duration-200 hover:bg-surface-muted hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
         >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2}>
             <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
           </svg>
         </button>
@@ -223,7 +224,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
       </dl>
 
       <div className="rounded-xl bg-red-500/8 p-3.5 ring-1 ring-inset ring-red-500/25">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-700/80 dark:text-red-300/80">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">
             {t.fireDetail.satelliteTelemetryTitle}
           </h3>
           <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -251,6 +252,8 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
         startedAt={selection.startedAt}
         selectionId={selection.id}
       />
+
+      <PanelFooter />
     </div>
   );
 }
@@ -271,9 +274,9 @@ interface OpenMeteoResponse {
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/45">{label}</dt>
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/65">{label}</dt>
       <dd className="mt-1 break-words font-mono text-xs font-medium tabular-nums text-foreground">{value}</dd>
-      {hint && <dd className="mt-1 text-[11px] leading-4 text-foreground/45">{hint}</dd>}
+      {hint && <dd className="mt-1 text-[11px] leading-4 text-foreground/65">{hint}</dd>}
     </div>
   );
 }

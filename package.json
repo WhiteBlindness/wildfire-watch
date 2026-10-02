@@ -18,6 +18,9 @@
     "test:rss": "esbuild ./src/lib/news/rss.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/rss.test.cjs && node ./node_modules/.cache/wildfire-watch/rss.test.cjs",
     "test:news-route": "esbuild ./src/app/api/news/route.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/news-route.test.cjs && node ./node_modules/.cache/wildfire-watch/news-route.test.cjs",
     "test:fire-detail": "esbuild ./src/app/api/fires/detail/route.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/fire-detail.test.cjs && node ./node_modules/.cache/wildfire-watch/fire-detail.test.cjs",
+    "test:legal": "esbuild ./src/lib/legal/content.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/legal-content.test.cjs && node ./node_modules/.cache/wildfire-watch/legal-content.test.cjs",
+    "test:compliance": "node --test tests/compliance.test.mjs",
+    "test": "npm run test:map && npm run test:viirs && npm run test:language && npm run test:typography && npm run test:air-quality && npm run test:sampling && npm run test:temporal && npm run test:overview-metrics && npm run test:rss && npm run test:news-route && npm run test:fire-detail && npm run test:legal && npm run test:compliance",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"

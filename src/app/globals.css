@@ -7,6 +7,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+  /* Keyboard focus indicator: >= 3:1 against both the page and the map chrome. */
+  --focus-ring: #dc2626;
   --surface: #ffffff;
   --surface-muted: #eceef1;
   --timeline-track: #d4d4d8;
@@ -46,6 +48,7 @@
 }
 
 .dark {
+  --focus-ring: #f87171;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --surface: #12161d;
@@ -395,6 +398,12 @@ html.dark .wildfire-watch[data-basemap-mode="satellite"] .maplibregl-ctrl-attrib
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+  /* Fallback indicator for anything without its own focus-visible ring.
+     Components that draw a ring still win: utilities sit above this layer. */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
   }
   body {
     @apply bg-background text-foreground;

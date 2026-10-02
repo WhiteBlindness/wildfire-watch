@@ -8,9 +8,12 @@ import Legend from "@/components/map/Legend";
 import MapLoadingState from "@/components/map/MapLoadingState";
 import SidePanel from "@/components/panel/SidePanel";
 import { firmsAdapter } from "@/lib/wildfire/firms-adapter";
+import { eventToSelection } from "@/lib/wildfire/selection";
+import { useLocale } from "@/lib/i18n/LocaleProvider";
 import type {
   FeedLoadStatus,
   FireSelection,
+  WildfireEvent,
   WildfireFeedSnapshot,
 } from "@/lib/wildfire/types";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
@@ -30,6 +33,7 @@ interface HomeClientProps {
 
 export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClientProps) {
   const { resolvedTheme } = useTheme();
+  const { t } = useLocale();
   const [feedSnapshot, setFeedSnapshot] = useState<WildfireFeedSnapshot | null>(initialSnapshot ?? null);
   const [feedState, setFeedState] = useState<FeedLoadStatus>(initialSnapshot ? "ready" : "loading");
   const events = useMemo(() => feedSnapshot?.events ?? [], [feedSnapshot]);
@@ -103,6 +107,11 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
     if (selection) setIsPanelMinimized(false);
   }
 
+  // Keyboard and screen-reader route to a detection that bypasses the canvas.
+  function handleEventSelect(event: WildfireEvent): void {
+    handleMapSelect(eventToSelection(event));
+  }
+
   function handleCountryChange(country: string): void {
     setSelectedCountry(country);
     setSelectedFire(null);
@@ -123,6 +132,13 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
       data-map-panel-minimized={isPanelMinimized ? "true" : "false"}
       data-basemap-mode={basemapMode}
     >
+      <a
+        href="#mission-control-panel-content"
+        onClick={() => setIsPanelMinimized(false)}
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-white focus:px-4 focus:py-3 focus:text-sm focus:font-semibold focus:text-neutral-900 focus:shadow-lg dark:focus:bg-neutral-900 dark:focus:text-neutral-100"
+      >
+        {t.panel.skipToPanel}
+      </a>
       {/* Keep MapLibre mounted under the branded lifecycle layer so it can
           measure the viewport and finish style work while data is pending. */}
       <div className={`wildfire-watch-map absolute inset-0 z-0 transition-opacity duration-[400ms] motion-reduce:duration-0 ${isInitialLoading ? "opacity-0" : "opacity-100"}`}>
@@ -171,6 +187,7 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
         countries={countries}
         selectedCountry={selectedCountry}
         onCountryChange={handleCountryChange}
+        onSelectEvent={handleEventSelect}
         feedSnapshot={feedSnapshot}
         feedState={feedState}
       />
