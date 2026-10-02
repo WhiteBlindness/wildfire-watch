@@ -67,6 +67,8 @@ Live FIRMS data requires a NASA map key in `FIRMS_MAP_KEY` (available free from 
 
 ```bash
 npm test                 # every suite below, in sequence
+npm run typecheck
+npm run lint
 npm run test:sampling    # ingest downsampling
 npm run test:temporal    # detection ageing
 npm run test:air-quality
@@ -79,14 +81,17 @@ npm run deploy           # build + ship to Cloudflare
 
 ## Deployment
 
-Production deploys from GitHub Actions (`.github/workflows/deploy.yml`) on every push to `main`, running `npm run deploy`. That script runs `opennextjs-cloudflare build` before Wrangler, which is what creates `.open-next/worker.js` and `.open-next/assets`.
+GitHub Actions (`.github/workflows/deploy.yml`) is the only deploy path. On every push to `main` it runs, in order, and stops at the first failure:
 
-Use exactly one pipeline. If the Worker is also connected to Git in the Cloudflare dashboard (Workers Builds), every push deploys twice, and with the default commands (`npm run build`, then `npx wrangler deploy`) the Cloudflare build fails, because plain `next build` never produces `.open-next/assets`. Either disconnect it under **Settings → Build**, or keep it and delete the GitHub workflow, with these settings:
+1. `npm test`
+2. `npm run typecheck`
+3. `npm run lint`
+4. `npm run build:cloudflare` (`opennextjs-cloudflare build`, which creates `.open-next/worker.js` and `.open-next/assets`)
+5. `npm run deploy:cloudflare` (needs the `CLOUDFLARE_API_TOKEN` secret)
 
-| Setting | Value |
-| --- | --- |
-| Build command | `npx opennextjs-cloudflare build` |
-| Deploy command | `npx wrangler deploy` |
+Pull requests to `main` run steps 1 to 4 and never deploy. `npm run deploy` still builds and deploys in one go for local use.
+
+Cloudflare's own Git integration (Workers Builds) is disconnected on purpose. Reconnecting it would deploy every push twice, and with its default commands the build fails, because plain `next build` never produces `.open-next/assets`.
 
 ## Legal, privacy and accessibility
 

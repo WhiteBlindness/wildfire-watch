@@ -1,13 +1,30 @@
 name: Deploy to Cloudflare Workers
 
+# The single production deploy path. Every push to main is tested, typechecked,
+# linted and built before anything reaches Cloudflare; pull requests run the
+# same gate without deploying. Cloudflare's own Git integration (Workers Builds)
+# is intentionally disconnected so production never deploys twice.
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Never run two production deploys at once; a newer push waits for the current one.
+concurrency:
+  group: ${{ github.event_name == 'push' && 'production-deploy' || format('verify-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   deploy:
+    name: Verify, build and deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code
@@ -22,7 +39,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build and deploy application
-        run: npm run deploy
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build (OpenNext for Cloudflare)
+        run: npm run build:cloudflare
+
+      - name: Deploy to Cloudflare Workers
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npm run deploy:cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
