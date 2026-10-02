@@ -1,6 +1,7 @@
 /**
- * Public identity of the deployment. Legal pages, the Nominatim User-Agent and
- * the README all describe the same operator, so they read from one place.
+ * Public identity of the deployment, read by the legal pages. The README and
+ * the Nominatim User-Agent (src/app/api/reverse-geocode/route.ts) repeat the
+ * URL as plain text, so keep them in step if it changes.
  *
  * `maintainer` and `contactUrl` are what the privacy policy names as the data
  * controller and contact channel (GDPR art. 13). Replace them with a legal name
