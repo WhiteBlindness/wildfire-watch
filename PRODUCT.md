@@ -12,7 +12,7 @@ Primarily (~90%) general public and wildfire-curious visitors checking on fires 
 
 ## Product Purpose
 
-Make global wildfire activity visible and understandable at a glance, in real time, on a single full-screen map. Built as a personal portfolio project to demonstrate full-stack engineering and data-aggregation/mapping craft — success is shipping a real, working, polished product, not hitting business metrics.
+Make global wildfire activity visible and understandable at a glance, in near real time (satellite detections arrive hours late), on a single full-screen map. Built as a personal portfolio project to demonstrate full-stack engineering and data-aggregation/mapping craft — success is shipping a real, working, polished product, not hitting business metrics.
 
 ## Positioning
 
@@ -21,16 +21,16 @@ An aggregator that normalizes wildly different wildfire data sources (NASA FIRMS
 ## Operating Context
 
 - Full-screen interactive world map (Flightradar24-style), heatmap hotspots + burned-area polygons.
-- Click a fire → sliding side panel (desktop) / bottom drawer (mobile): status, severity, area, wind, forces deployed, international aid, evolution chart.
+- Click a fire → sliding side panel (desktop) / bottom drawer (mobile): radiative power, modelled burned area, modelled weather, nearest air-quality reading, related news. Status, deployed forces, international aid and evolution charts are not observable from satellite detections and are not shown.
 - UI language is European Portuguese (PT-PT) throughout.
 - Dark mode is the default (cinematic look for heatmaps/fire borders); light mode toggle available.
-- Deployed on Cloudflare (Workers via OpenNext adapter, free tier), ad slots reserved for future AdSense placements.
+- Deployed on Cloudflare (Workers via OpenNext adapter, free tier). Any future advertising requires a consent banner and a privacy-policy update first; today the site sets no cookies.
 
 ## Capabilities and Constraints
 
 - Next.js App Router + TypeScript, MapLibre GL JS (via react-map-gl), Recharts, Tailwind CSS.
-- `WildfireDataAdapter` interface currently backed only by a deterministic mock generator (`src/lib/wildfire`); UI never assumes a single source's shape.
-- Real API adapters (NASA FIRMS, EFFIS, Portuguese civil protection/ANEPC) are a confirmed near-term goal — not yet implemented, no API keys/access secured yet.
+- `WildfireDataAdapter` interface backed by the live NASA FIRMS adapter, with the deterministic mock generator kept for offline interface work (`src/lib/wildfire`); UI never assumes a single source's shape.
+- EFFIS and Portuguese civil protection (ANEPC) adapters are planned, not implemented.
 - Must stay Cloudflare Workers/edge-compatible: no Node.js built-ins (`fs`, `path`, etc.) in server code.
 
 ## Brand Commitments
@@ -41,7 +41,7 @@ An aggregator that normalizes wildly different wildfire data sources (NASA FIRMS
 
 ## Evidence on Hand
 
-None yet. All fire data currently shown is synthetic (deterministic mock generator) — it must never be presented as, or visually indistinguishable from, real/live incident data until real adapters ship.
+Live NASA FIRMS VIIRS detections, refreshed hourly into Workers KV. The mock generator still exists for offline work and must never be presented as, or be visually indistinguishable from, real data. The site is unofficial and must say so, with a pointer to 112 and the civil protection authority, wherever fire data is shown.
 
 ## Product Principles
 

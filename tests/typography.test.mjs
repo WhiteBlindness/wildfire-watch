@@ -54,7 +54,7 @@ test("uses monospaced tabular numerals for overview and fire-detail readouts", (
 });
 
 test("uses the data face for weather, air-quality, news-time, and timeline telemetry", () => {
-  assert.match(telemetry, /liveLabel[\s\S]*?font-mono[^"]*tabular-nums/);
+  assert.match(telemetry, /weatherModelLabel[\s\S]*?font-mono[^"]*tabular-nums/);
   assert.match(telemetry, /tone\.label[\s\S]*?font-mono[^"]*tabular-nums/);
   assert.match(telemetry, /reading\.distanceKm[\s\S]*?font-mono[^"]*tabular-nums/);
   assert.match(telemetry, /dateTime=\{article\.publishedAt\}[\s\S]*?font-mono[^"]*tabular-nums/);

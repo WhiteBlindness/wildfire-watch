@@ -158,18 +158,20 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
           />
         )}
 
-        <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/35">{t.fireDetail.airQualitySource}</p>
+        <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/65">{t.fireDetail.airQualitySource}</p>
       </section>
 
       <section className="rounded-2xl border border-border/60 bg-surface-muted/35 p-3.5 shadow-[0_18px_48px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold tracking-[-0.015em] text-foreground">
-          {t.fireDetail.liveConditionsTitle}
+          {t.fireDetail.weatherTitle}
         </h3>
+        {/* Open-Meteo "current" values are model output, not an observation at
+            the fire, so the badge says so instead of signalling a live feed. */}
         {!weatherFailed && (
-          <span className="flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tabular-nums tracking-[0.08em] text-foreground/55">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-400 shadow-[0_0_8px_rgba(239,68,68,0.7)] motion-safe:animate-pulse" />
-            {t.fireDetail.liveLabel}
+          <span className="flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tabular-nums tracking-[0.08em] text-foreground/65">
+            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-foreground/50" />
+            {t.fireDetail.weatherModelLabel}
           </span>
         )}
       </div>
@@ -189,13 +191,15 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
           />
         </dl>
       ) : (
-        <div className="flex min-h-28 items-center justify-center rounded-xl bg-background/25 px-3 text-center text-xs text-foreground/55 ring-1 ring-inset ring-border/45">
+        <div className="flex min-h-28 items-center justify-center rounded-xl bg-background/25 px-3 text-center text-xs text-foreground/65 ring-1 ring-inset ring-border/45">
           {weatherFailed ? t.fireDetail.weatherUnavailable : t.fireDetail.weatherLoading}
         </div>
       )}
 
-      <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/35">
-        {t.fireDetail.openMeteoSource}
+      <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/65">
+        <a href="https://open-meteo.com/" rel="noopener noreferrer" target="_blank" className="underline underline-offset-2 transition-colors hover:text-foreground">
+          {t.fireDetail.openMeteoSource}
+        </a>
       </p>
     </section>
 
@@ -224,7 +228,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
         ) : articles.length === 0 ? (
           <div>
             <NewsMessage>{t.fireDetail.newsEmpty}</NewsMessage>
-            <p className="mt-2 text-[11px] leading-4 text-foreground/45">{t.fireDetail.newsCoverageSinceDetection}</p>
+            <p className="mt-2 text-[11px] leading-4 text-foreground/65">{t.fireDetail.newsCoverageSinceDetection}</p>
           </div>
         ) : (
           <ul className="space-y-2">
@@ -239,15 +243,15 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
                 >
                   <span className="min-w-0">
                     <span className="line-clamp-2 block text-xs font-medium leading-5 text-foreground/85">{article.title}</span>
-                    <time dateTime={article.publishedAt} className="mt-1 block font-mono text-[11px] uppercase tabular-nums tracking-[0.06em] text-foreground/40">{new Date(article.publishedAt).toLocaleDateString(locale === "pt" ? "pt-PT" : "en-GB")}</time>
+                    <time dateTime={article.publishedAt} className="mt-1 block font-mono text-[11px] uppercase tabular-nums tracking-[0.06em] text-foreground/65">{new Date(article.publishedAt).toLocaleDateString(locale === "pt" ? "pt-PT" : "en-GB")}</time>
                   </span>
-                  <ExternalLink aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/35 transition-colors group-hover:text-red-400" />
+                  <ExternalLink aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/65 transition-colors group-hover:text-red-400" />
                 </a>
               </li>
             ))}
           </ul>
         )}
-        <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/35">{t.fireDetail.newsSource}</p>
+        <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/65">{t.fireDetail.newsSource}</p>
       </section>
     </div>
   );
@@ -344,7 +348,7 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
     <div data-testid="air-quality-reading" aria-live="polite" className={`rounded-xl p-3 ring-1 ring-inset ${tone.surface}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/55">{t.fireDetail.aqiLabel}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65">{t.fireDetail.aqiLabel}</p>
           <p className={`mt-1 font-mono text-3xl font-semibold leading-none tabular-nums ${tone.text}`}>{reading.aqi}</p>
         </div>
         <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 font-mono text-[11px] font-semibold tabular-nums ${tone.text}`}>
@@ -354,15 +358,15 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-neutral-200 pt-3 text-xs dark:border-neutral-800">
         <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/45">PM2.5</dt>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/65">PM2.5</dt>
           <dd className="mt-1 font-mono font-semibold tabular-nums text-foreground">{reading.pm25.toFixed(1)} {reading.unit}</dd>
         </div>
         <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/45">{t.fireDetail.airQualityStationLabel}</dt>
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/65">{t.fireDetail.airQualityStationLabel}</dt>
           <dd className="mt-1 truncate font-medium text-foreground/80">{reading.stationName ?? t.fireDetail.airQualityNearestMonitor}</dd>
         </div>
       </dl>
-      <p className="mt-3 font-mono text-[11px] tabular-nums text-foreground/50">
+      <p className="mt-3 font-mono text-[11px] tabular-nums text-foreground/65">
         {reading.distanceKm === null ? t.fireDetail.airQualityDistanceUnknown : `${reading.distanceKm.toFixed(1)} km`} · {new Date(reading.observedAt).toLocaleString(locale === "pt" ? "pt-PT" : "en-GB")}
       </p>
     </div>
@@ -371,7 +375,7 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
 
 function NewsMessage({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-20 items-center justify-center rounded-xl bg-background/25 px-3 text-center text-xs text-foreground/55 ring-1 ring-inset ring-border/45">
+    <div className="flex min-h-20 items-center justify-center rounded-xl bg-background/25 px-3 text-center text-xs text-foreground/65 ring-1 ring-inset ring-border/45">
       {children}
     </div>
   );
@@ -380,13 +384,13 @@ function NewsMessage({ children }: { children: ReactNode }) {
 function WeatherStat({ detail, icon, label, value }: { detail?: string; icon: ReactNode; label: string; value: string }) {
   return (
     <div className="min-h-24 bg-surface/90 p-2.5">
-      <div className="flex items-center gap-1.5 text-foreground/45 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:stroke-[1.7]">
+      <div className="flex items-center gap-1.5 text-foreground/65 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:stroke-[1.7]">
         {icon}
         <dt className="text-[11px] font-semibold uppercase leading-tight tracking-[0.06em]">{label}</dt>
       </div>
       <dd className="mt-2 font-mono text-sm font-semibold tabular-nums text-foreground">
         {value}
-        {detail && <span className="ml-1.5 text-[11px] font-normal text-foreground/40">{detail}</span>}
+        {detail && <span className="ml-1.5 text-[11px] font-normal text-foreground/65">{detail}</span>}
       </dd>
     </div>
   );

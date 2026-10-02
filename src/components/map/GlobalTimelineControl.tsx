@@ -1,9 +1,10 @@
 "use client";
 
 import { Info, Maximize2, Minimize2, Pause, Play, Rewind } from "lucide-react";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { GLOBAL_TIMELINE_HOURS } from "@/lib/wildfire/temporal";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
+import { useMediaQuery } from "@/lib/media-query";
 
 interface GlobalTimelineControlProps {
   isPlaying: boolean;
@@ -14,13 +15,13 @@ interface GlobalTimelineControlProps {
 
 export default function GlobalTimelineControl({ isPlaying, value, onChange, onTogglePlayback }: GlobalTimelineControlProps) {
   const { t } = useLocale();
-  // Default to minimised on small viewports so the map is unobstructed on
-  // arrival. SSR and the initial client render both use false so hydration
-  // stays consistent; the effect runs after the 400 ms map fade-in anyway.
-  const [isMinimized, setIsMinimized] = useState(false);
-  useEffect(() => {
-    if (window.matchMedia("(max-width: 767px)").matches) setIsMinimized(true);
-  }, []);
+  // Small viewports start minimised so the map is unobstructed on arrival.
+  // The media query is read during render (hydration uses the server value,
+  // false, then re-renders with the real one), and only the visitor's explicit
+  // choice is state: once they toggle, that choice wins.
+  const isSmallViewport = useMediaQuery("(max-width: 767px)");
+  const [minimizedChoice, setMinimizedChoice] = useState<boolean | null>(null);
+  const isMinimized = minimizedChoice ?? isSmallViewport;
   const remainingHours = Math.max(0, GLOBAL_TIMELINE_HOURS - value);
   const currentLabel = remainingHours === 0 ? t.timeline.now : `T-${remainingHours}h`;
   const timelineProgress = `${(Math.min(GLOBAL_TIMELINE_HOURS, Math.max(0, value)) / GLOBAL_TIMELINE_HOURS) * 100}%`;
@@ -57,14 +58,17 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
             <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-600 dark:text-neutral-400">
               <Rewind aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-red-500 dark:text-red-400" />
               <span className="truncate">{t.timeline.title}</span>
+              {/* The hover title is a convenience for pointer users only; the
+                  same text is the slider's accessible description below, and
+                  the full methodology lives on the About page. */}
               <span
-                tabIndex={isMinimized ? -1 : 0}
-                aria-label={t.timeline.methodologyLabel}
+                aria-hidden="true"
                 title={t.timeline.methodologyText}
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-neutral-500 outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:text-neutral-400"
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-neutral-600 dark:text-neutral-400"
               >
-                <Info aria-hidden="true" className="h-3.5 w-3.5" />
+                <Info className="h-3.5 w-3.5" />
               </span>
+              <span id="global-timeline-methodology" className="sr-only">{t.timeline.methodologyText}</span>
             </span>
             <output className="shrink-0 font-mono text-xs font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{currentLabel}</output>
             <button
@@ -73,14 +77,15 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
               aria-controls="global-timeline-controls"
               aria-expanded="true"
               tabIndex={isMinimized ? -1 : 0}
-              onClick={() => setIsMinimized(true)}
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-[background-color,color,transform] duration-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+              onClick={() => setMinimizedChoice(true)}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-neutral-600 transition-[background-color,color,transform] duration-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
             >
               <Minimize2 aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
           </div>
           <input
             aria-label={t.timeline.sliderLabel}
+            aria-describedby="global-timeline-methodology"
             type="range"
             min={0}
             max={GLOBAL_TIMELINE_HOURS}
@@ -91,7 +96,7 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
             style={{ "--timeline-progress": timelineProgress } as CSSProperties}
             className="timeline-slider block h-6 w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/80"
           />
-          <div aria-hidden="true" className="mt-0.5 flex justify-between font-mono text-[11px] font-medium uppercase tabular-nums tracking-[0.08em] text-neutral-500 dark:text-neutral-400">
+          <div aria-hidden="true" className="mt-0.5 flex justify-between font-mono text-[11px] font-medium uppercase tabular-nums tracking-[0.08em] text-neutral-600 dark:text-neutral-400">
             <span>T-72h</span>
             <span>T-36h</span>
             <span>{t.timeline.now}</span>
@@ -100,11 +105,11 @@ export default function GlobalTimelineControl({ isPlaying, value, onChange, onTo
       </div>
       <button
         type="button"
-        aria-label={t.timeline.expandLabel}
+        aria-label={`${t.timeline.expandLabel}, ${currentLabel}`}
         aria-controls="global-timeline-controls"
         aria-expanded="false"
         tabIndex={isMinimized ? 0 : -1}
-        onClick={() => setIsMinimized(false)}
+        onClick={() => setMinimizedChoice(false)}
         className={`absolute inset-0 flex items-center justify-center gap-1.5 text-xs font-semibold text-neutral-700 transition-[opacity,transform,background-color,color] duration-200 ease-out hover:bg-neutral-100/70 hover:text-neutral-950 dark:text-neutral-200 dark:hover:bg-neutral-800/70 dark:hover:text-white motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 ${
           isMinimized ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-2 opacity-0"
         }`}

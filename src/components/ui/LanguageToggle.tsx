@@ -4,6 +4,7 @@ import { useLocale } from "@/lib/i18n/LocaleProvider";
 import type { Locale } from "@/lib/i18n/types";
 
 const OPTIONS: Locale[] = ["pt", "en"];
+const OPTION_LANG: Record<Locale, string> = { pt: "pt-PT", en: "en" };
 
 export default function LanguageToggle() {
   const { locale, setLocale, t } = useLocale();
@@ -24,13 +25,17 @@ export default function LanguageToggle() {
         <button
           key={option}
           type="button"
+          lang={OPTION_LANG[option]}
           onClick={() => setLocale(option)}
           aria-pressed={locale === option}
-          className={`relative z-10 flex flex-1 items-center justify-center p-0 text-xs font-semibold uppercase leading-none tracking-wide transition-colors ${
-            locale === option ? "text-background" : "text-foreground/60"
+          className={`relative z-10 flex flex-1 items-center justify-center rounded-full p-0 text-xs font-semibold uppercase leading-none tracking-wide transition-colors ${
+            locale === option ? "text-background" : "text-foreground/70"
           }`}
         >
           {option}
+          {/* The visible code stays in the accessible name (WCAG 2.5.3); the
+              full language name is spoken in its own language. */}
+          <span className="sr-only"> {t.topBar.languageNames[option]}</span>
         </button>
       ))}
     </div>

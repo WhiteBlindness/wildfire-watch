@@ -15,9 +15,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WildfireWatch — Monitorização global de incêndios em tempo real",
+  title: "WildfireWatch — Mapa global de incêndios em quase tempo real",
   description:
-    "Mapa global de anomalias térmicas NASA FIRMS com potência radiativa, perímetros derivados e condições meteorológicas em direto.",
+    "Mapa não oficial das anomalias térmicas detetadas pelos satélites NASA FIRMS nas últimas 72 horas, com potência radiativa, áreas estimadas e meteorologia de modelo.",
 };
 
 export default function RootLayout({

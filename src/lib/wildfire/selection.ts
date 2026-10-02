@@ -41,7 +41,7 @@ export function eventsToClusterSelection(
   return {
     kind: "cluster",
     id: `cluster-${clusterId}`,
-    name: "Major fire event",
+    name: "Detection cluster",
     location,
     country: countries.length === 1 ? countries[0] : events[0].country,
     region: regions.length === 1 ? regions[0] : events[0].region,
