@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:map": "esbuild ./src/components/map/mapPresentation.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/map-presentation.test.cjs && node ./node_modules/.cache/wildfire-watch/map-presentation.test.cjs",
+    "test:detail-state": "esbuild ./src/components/map/detailState.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/detail-state.test.cjs && node ./node_modules/.cache/wildfire-watch/detail-state.test.cjs",
+    "test:media-query": "esbuild ./src/lib/media-query.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/media-query.test.cjs && node ./node_modules/.cache/wildfire-watch/media-query.test.cjs",
     "test:viirs": "esbuild ./src/lib/wildfire/viirs.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/viirs.test.cjs && node ./node_modules/.cache/wildfire-watch/viirs.test.cjs",
     "test:language": "node --test tests/document-language.test.mjs",
     "test:typography": "node --test tests/typography.test.mjs",
@@ -20,7 +22,7 @@
     "test:fire-detail": "esbuild ./src/app/api/fires/detail/route.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/fire-detail.test.cjs && node ./node_modules/.cache/wildfire-watch/fire-detail.test.cjs",
     "test:legal": "esbuild ./src/lib/legal/content.test.ts --bundle --platform=node --format=cjs --outfile=./node_modules/.cache/wildfire-watch/legal-content.test.cjs && node ./node_modules/.cache/wildfire-watch/legal-content.test.cjs",
     "test:compliance": "node --test tests/compliance.test.mjs",
-    "test": "npm run test:map && npm run test:viirs && npm run test:language && npm run test:typography && npm run test:air-quality && npm run test:sampling && npm run test:temporal && npm run test:overview-metrics && npm run test:rss && npm run test:news-route && npm run test:fire-detail && npm run test:legal && npm run test:compliance",
+    "test": "npm run test:map && npm run test:detail-state && npm run test:media-query && npm run test:viirs && npm run test:language && npm run test:typography && npm run test:air-quality && npm run test:sampling && npm run test:temporal && npm run test:overview-metrics && npm run test:rss && npm run test:news-route && npm run test:fire-detail && npm run test:legal && npm run test:compliance",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"

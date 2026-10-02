@@ -9,7 +9,6 @@ import { eventsToClusterSelection, eventToSelection } from "@/lib/wildfire/selec
 import { eventsToTemporalMarkerGeoJSON } from "@/lib/wildfire/temporal";
 import { eventsToViirsPixelGeoJSON, pointsToViirsPixelGeoJSON } from "@/lib/wildfire/viirs";
 import { fetchFireDetailPoints } from "@/lib/wildfire/firms-adapter";
-import type { CachedFirmsPoint } from "@/lib/wildfire/firms-cache";
 import { SEVERITY_COLOR } from "@/lib/wildfire/colors";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
 import {
@@ -21,6 +20,7 @@ import {
   computeDetailCameraTarget,
 } from "./mapPresentation";
 import { syncSatelliteLayers } from "./satelliteLayers";
+import { EMPTY_DETAIL_STATE, detailStateForSelection, withDetailPoints, type DetailState } from "./detailState";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 // Free, no-API-key vector basemaps from CARTO — dark-matter fits the cinematic
@@ -308,9 +308,17 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     [events, mosaicBounds],
   );
 
-  // Full-resolution pixel data fetched from /api/fires/detail. null means
-  // "not yet loaded or selection cleared"; on success it replaces lowResPixelData.
-  const [detailPoints, setDetailPoints] = useState<CachedFirmsPoint[] | null>(null);
+  // Full-resolution pixel data fetched from /api/fires/detail, keyed by the
+  // selection it belongs to. Null points mean "not loaded yet, failed, or no
+  // selection"; on success they replace lowResPixelData.
+  const [detailState, setDetailState] = useState<DetailState>(EMPTY_DETAIL_STATE);
+  // A new selection discards the previous fire's dense pixels during this
+  // render, so an A→B switch never draws A's mosaic at B's location — not even
+  // for the one frame an effect-based reset would allow. This is React's
+  // "adjust state when a prop changes" pattern; it settles in one extra render.
+  const currentDetailState = detailStateForSelection(detailState, selectedFire?.id ?? null);
+  if (currentDetailState !== detailState) setDetailState(currentDetailState);
+  const detailPoints = currentDetailState.points;
 
   const detailPixelData = useMemo(
     () => detailPoints ? pointsToViirsPixelGeoJSON(detailPoints) : null,
@@ -332,15 +340,15 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   // Keyed on selectedFire.id so stable references don't trigger spurious
   // re-fetches when the parent re-renders with the same selection identity.
   useEffect(() => {
-    // Clear detail data immediately so A→B transitions don't briefly show A's
-    // dense pixels at B's location while the fetch is in flight.
-    setDetailPoints(null);
-    // A new selection starts: the immediate flyTo IS intentional, so reset the
-    // pan-away guard so the mosaic-fit still runs when the data arrives.
+    // The previous selection's dense pixels were already dropped during render
+    // (see currentDetailState). A new selection starts: the immediate flyTo IS
+    // intentional, so reset the pan-away guard so the mosaic-fit still runs
+    // when the data arrives.
     userPannedAwayRef.current = false;
 
     if (!selectedFire || !selectedFireEventIds || selectedFireEventIds.length === 0) return;
 
+    const selectionId = selectedFire.id;
     const fetchId = ++detailFetchCounterRef.current;
     const controller = new AbortController();
 
@@ -381,7 +389,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         const points = await fetchFireDetailPoints(bbox, { days: 3, start: detailStart, signal: controller.signal });
         // Guard against out-of-order responses from rapid re-selections.
         if (detailFetchCounterRef.current !== fetchId) return;
-        setDetailPoints(points);
+        setDetailState((state) => withDetailPoints(state, selectionId, points));
       } catch (error) {
         // An abort is expected when the selection changes or the component
         // unmounts — it is not a real failure, so log nothing.
@@ -389,8 +397,8 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
         // Guard stale responses even in the error path.
         if (detailFetchCounterRef.current !== fetchId) return;
         // Real fetch/parse failure — keep the low-res fallback (detailPoints
-        // stays null from the setDetailPoints(null) call above) and surface
-        // the error so it's visible during debugging.
+        // stays null for this selection) and surface the error so it's
+        // visible during debugging.
         console.error("Fire detail fetch failed; keeping low-resolution fallback.", error);
       }
     })();
