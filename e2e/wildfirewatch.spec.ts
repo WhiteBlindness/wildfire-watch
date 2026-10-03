@@ -49,6 +49,7 @@ test("loads the synthetic feed in Portuguese, served with security headers", asy
   expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
 
   await expect(page.locator("html")).toHaveAttribute("lang", "pt-PT");
+  expect((await page.request.get("/favicon.ico")).status()).toBe(200);
   await expect(healthBadge(page)).toHaveAttribute("data-state", "healthy");
   await expect(healthBadge(page)).toHaveText(pt.overview.healthHealthy);
   await expect(page.getByRole("heading", { name: pt.overview.strongestTitle })).toBeVisible();

@@ -14,7 +14,7 @@ export const FIRMS_VIIRS_DATASET: DatasetProvenance = {
   id: "nasa-firms:viirs-snpp-nrt",
   provider: "NASA FIRMS",
   product: "VIIRS_SNPP_NRT",
-  instrument: "VIIRS on Suomi NPP",
+  instrument: "VIIRS · Suomi NPP",
   observationKind: "satellite_thermal_detection",
   reportsOperationalStatus: false,
   attribution: "NASA Fire Information for Resource Management System (FIRMS)",
