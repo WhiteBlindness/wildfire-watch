@@ -52,9 +52,12 @@ jobs:
       - name: Build (OpenNext for Cloudflare)
         run: npm run build:cloudflare
         env:
-          # Optional, public by design (it ships in browser requests to CARTO).
-          # Set as a repository variable once a CARTO basemaps key is registered.
-          NEXT_PUBLIC_CARTO_API_KEY: ${{ vars.CARTO_API_KEY }}
+          # CARTO basemaps key: public by design (every browser request to CARTO
+          # carries it), but only the production build needs it; pull-request
+          # builds stub CARTO in the end-to-end tests. GitHub prints non-secret
+          # environment values in the log, so an Actions secret of the same name
+          # is preferred over the repository variable when both exist.
+          NEXT_PUBLIC_CARTO_API_KEY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && (secrets.CARTO_API_KEY || vars.CARTO_API_KEY) || '' }}
 
       # The production build under `wrangler dev`, with a synthetic FIRMS
       # snapshot and every third-party host stubbed: no network data is used.

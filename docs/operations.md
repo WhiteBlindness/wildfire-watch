@@ -110,7 +110,10 @@ Error logs record error names and HTTP statuses only: a fetch error message can 
 
 **Known advisory.** `maplibre-gl` 5.x is affected by GHSA-jrc7-96c5-q579, an XSS bypass in the sanitiser MapLibre applies to attribution and popup HTML; the fix exists only in MapLibre 6. WildfireWatch passes no visitor-controlled HTML to MapLibre (attribution comes from the CARTO style over HTTPS and a fixed Esri string), so exploitation would need a compromised basemap provider. Version 6 is ESM-only, needs WebGL2 and loads its worker differently, so the upgrade belongs in its own pull request with visual checks rather than in a hardening pass.
 
-**CARTO key.** CARTO now requires an API key on basemap requests. Register a free key at <https://carto.com/basemaps/apikey/> and store it as the repository variable `CARTO_API_KEY`; the build passes it as `NEXT_PUBLIC_CARTO_API_KEY` and the map adds it to CARTO URLs only.
+**CARTO key.** CARTO requires an API key on basemap requests. The free key is configured in GitHub as `CARTO_API_KEY`; the production build passes it as `NEXT_PUBLIC_CARTO_API_KEY` and the map adds it to CARTO URLs only. The key ends up in the public JavaScript bundle and in every tile request, so it is not a secret, but it is kept out of logs where possible:
+
+- only the deploy build on `main` receives it; pull-request builds stub CARTO and do not need it;
+- the workflow prefers an Actions **secret** named `CARTO_API_KEY` and falls back to the repository **variable** of the same name. GitHub prints the values of non-secret variables in each step's environment listing, so storing the key as a secret keeps it out of the deploy log as well.
 
 ## Testing
 

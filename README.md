@@ -92,7 +92,7 @@ GitHub Actions (`.github/workflows/deploy.yml`) is the only deploy path. On ever
 1. `npm test`
 2. `npm run typecheck`
 3. `npm run lint`
-4. `npm run build:cloudflare` (`opennextjs-cloudflare build`, which creates `.open-next/worker.js` and `.open-next/assets`; the optional `CARTO_API_KEY` repository variable is passed to the build)
+4. `npm run build:cloudflare` (`opennextjs-cloudflare build`, which creates `.open-next/worker.js` and `.open-next/assets`; on `main`, the CARTO basemap key `CARTO_API_KEY` is passed to the build)
 5. `npm run test:e2e` (Playwright report, traces and videos are kept when it fails)
 6. `npm run deploy:cloudflare` (needs the `CLOUDFLARE_API_TOKEN` secret)
 

@@ -20,7 +20,7 @@ Engineering due diligence, not legal advice. It records what WildfireWatch does 
 | Tracking disclosure | IMPLEMENTED | No trackers (static test forbids them). Direct browser requests to CARTO, Esri and Open-Meteo are disclosed with what each receives. |
 | Form consent | NOT APPLICABLE | The site has no forms. Contact goes through GitHub issues. |
 | Data minimisation | IMPLEMENTED | No visitor identifiers are used for rate limiting; coordinates are rounded before reaching Nominatim and OpenAQ; logs record error names, not URLs or messages; operator alerts carry no visitor data. |
-| Operator / contact information | OWNER DECISION | The policy names the maintainer by the pseudonym "WhiteBlindness" and gives GitHub issues as the contact. GDPR art. 13(1)(a) asks for the controller's identity and contact details; see owner decisions. |
+| Operator / contact information | OWNER DECISION | The policy names the maintainer by the pseudonym "WhiteBlindness" and gives GitHub issues as the contact. GDPR art. 13(1)(a) asks for the controller's identity and contact details. The owner has decided to keep the pseudonymous identity and accepts the residual risk; see owner decisions. |
 | Local laws | IMPLEMENTED | GDPR and Lei 58/2019 (privacy notice), Lei 41/2004 (storage), unofficial-source notice with 112. DL 7/2004 identification duties and the Livro de Reclamações do not apply to a non-commercial site with no consumer service (see research). |
 | Third-party services / embeds | IMPLEMENTED | No iframes or third-party scripts. Third-party requests are listed in the policy and enforced by the Content Security Policy. Provider-specific findings are below. |
 | Copyright, image and data rights | IMPLEMENTED | Attributions for NASA FIRMS, CARTO and OpenStreetMap, Esri, Nominatim, Open-Meteo (CC BY 4.0), OpenAQ, news publishers and fonts on `/sobre`. News shows headline and link only. |
@@ -77,5 +77,7 @@ Commercialisation is not a current goal. If advertising, sponsorship or paid fea
 
 ## Owner decisions
 
-1. **Controller identity.** Publishing a legal name and a private contact channel (an email address) would most likely satisfy GDPR art. 13(1)(a); staying pseudonymous with GitHub issues keeps a residual risk, which is low in practice for a small non-commercial site. No personal data has been added to the site.
-2. **CARTO API key.** Register a free key and set the `CARTO_API_KEY` repository variable, or accept that the basemap may stop rendering or show a watermark.
+Recorded on 03/10/2026.
+
+1. **Controller identity: keep the pseudonym.** The site keeps naming the controller as "WhiteBlindness" with GitHub issues as the contact channel, and publishes no legal name, email address or postal address. Publishing a legal name and a private contact channel would most likely satisfy GDPR art. 13(1)(a) more fully; the owner accepts the residual compliance risk of a pseudonymous controller for as long as WildfireWatch stays personal and non-commercial, with no accounts, forms, analytics, advertising or payments. This is an owner decision, not a finding that the pseudonymous identity is legally sufficient. It must be revisited before any of those conditions change.
+2. **CARTO basemaps: free key, no paid plan.** A free CARTO Basemaps key is configured for production builds. The key is public by design, because it travels in every browser request to CARTO, but it is kept out of CI logs where possible (see [operations.md](./operations.md)). Commercial use would need CARTO's commercial tier (see above).
