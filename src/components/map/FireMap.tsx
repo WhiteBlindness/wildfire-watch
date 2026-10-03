@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Map, { AttributionControl, Layer, ScaleControl, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
-import type { FilterSpecification, GeoJSONSource, Map as MapLibreMap, MapLibreEvent } from "maplibre-gl";
+import { setWorkerUrl, type FilterSpecification, type GeoJSONSource, type Map as MapLibreMap, type MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { DetectionSelection, ThermalDetection } from "@/lib/wildfire/types";
 import { detectionToSelection, detectionsToClusterSelection } from "@/lib/wildfire/selection";
@@ -23,6 +23,11 @@ import {
 import { syncSatelliteLayers } from "./satelliteLayers";
 import { EMPTY_DETAIL_STATE, detailStateForSelection, withDetailPoints, type DetailState } from "./detailState";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
+
+// MapLibre 6 loads its tile worker as a module from this origin; the files are
+// copied into public/maplibre/ before each build (scripts/copy-maplibre-worker.mjs).
+const MAPLIBRE_WORKER_URL = "/maplibre/maplibre-gl-worker.mjs";
+setWorkerUrl(MAPLIBRE_WORKER_URL);
 
 // Inlined at build time; absent in local and test builds, where requests go out unchanged.
 const CARTO_API_KEY = process.env.NEXT_PUBLIC_CARTO_API_KEY;

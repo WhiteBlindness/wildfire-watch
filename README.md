@@ -56,9 +56,11 @@ When a visitor selects a detection, the panel fetches full-resolution FIRMS dete
 
 ## Stack
 
-Next.js App Router · TypeScript · MapLibre GL JS via react-map-gl · Turf.js · Tailwind · Playwright
+Next.js App Router · TypeScript · MapLibre GL JS 6 via react-map-gl · Turf.js · Tailwind · Playwright
 
 Deployed to Cloudflare Workers through the OpenNext adapter, which is the constraint that shapes the server code: no Node built-ins, no `fs`, no `path`. Everything runs on free tier.
+
+The map needs a browser with WebGL2; without it, the panel and detection list still work but the map does not draw.
 
 ## Running it
 

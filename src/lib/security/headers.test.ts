@@ -20,6 +20,10 @@ test("the production policy allows only this origin and the named map and weathe
     "https://api.open-meteo.com",
   ]);
   assert.deepEqual(directive(policy, "frame-ancestors"), ["'none'"]);
+  assert.deepEqual(directive(policy, "worker-src"), ["'self'"], "MapLibre's worker is served from this origin; no blob: workers");
+  // No frames at all. child-src stays unset: browsers without worker-src fall back to it for workers.
+  assert.deepEqual(directive(policy, "frame-src"), ["'none'"]);
+  assert.deepEqual(directive(policy, "child-src"), []);
   assert.deepEqual(directive(policy, "object-src"), ["'none'"]);
   assert.ok(!policy.includes("'unsafe-eval'"), "no eval in production");
   assert.ok(!/(^|\s)\*(\s|;|$)/.test(policy), "no bare wildcard source");
