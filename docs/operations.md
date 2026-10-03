@@ -104,11 +104,13 @@ Error logs record error names and HTTP statuses only: a fetch error message can 
 
 ## Security headers
 
-`src/lib/security/headers.ts` builds the Content Security Policy from the hosts the browser really contacts: this origin, CARTO (`basemaps.cartocdn.com`, `*.basemaps.cartocdn.com`), Esri (`server.arcgisonline.com`) and Open-Meteo (`api.open-meteo.com`). It also sets `frame-ancestors 'none'`, `object-src 'none'`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, HSTS, COOP and CORP. `next.config.ts` applies them to Worker responses and `public/_headers` to static assets; a unit test keeps the two identical, and every end-to-end test fails on a CSP violation.
+`src/lib/security/headers.ts` builds the Content Security Policy from the hosts the browser really contacts: this origin, CARTO (`basemaps.cartocdn.com`, `*.basemaps.cartocdn.com`), Esri (`server.arcgisonline.com`) and Open-Meteo (`api.open-meteo.com`). It also sets `frame-ancestors 'none'`, `frame-src 'none'`, `object-src 'none'`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, HSTS, COOP and CORP. `next.config.ts` applies them to Worker responses and `public/_headers` to static assets; a unit test keeps the two identical, and every end-to-end test fails on a CSP violation.
 
 `'unsafe-inline'` remains in `script-src` because statically rendered Next.js pages inline their bootstrap and cannot carry a per-request nonce; no third-party script is loaded.
 
-**Known advisory.** `maplibre-gl` 5.x is affected by GHSA-jrc7-96c5-q579, an XSS bypass in the sanitiser MapLibre applies to attribution and popup HTML; the fix exists only in MapLibre 6. WildfireWatch passes no visitor-controlled HTML to MapLibre (attribution comes from the CARTO style over HTTPS and a fixed Esri string), so exploitation would need a compromised basemap provider. Version 6 is ESM-only, needs WebGL2 and loads its worker differently, so the upgrade belongs in its own pull request with visual checks rather than in a hardening pass.
+**MapLibre.** The map uses MapLibre GL JS 6, which fixes GHSA-jrc7-96c5-q579 (an XSS bypass in the sanitiser MapLibre applies to attribution and popup HTML, fixed in 6.4.1). Version 6 runs its tile worker as an ES module from this origin: `scripts/copy-maplibre-worker.mjs` copies `maplibre-gl-worker.mjs` and `maplibre-gl-shared.mjs` into `public/maplibre/` before every `dev` and `build`, and `FireMap` points `setWorkerUrl` at them. The policy therefore allows workers from `'self'` only, with no `blob:` workers. The copied files are build output and are not committed.
+
+MapLibre 6 needs WebGL2. In a browser without it the map cannot start: the panel, the detection list and the detection details still work, but the map area keeps its loading state.
 
 **CARTO key.** CARTO requires an API key on basemap requests. The free key is configured in GitHub as `CARTO_API_KEY`; the production build passes it as `NEXT_PUBLIC_CARTO_API_KEY` and the map adds it to CARTO URLs only. The key ends up in the public JavaScript bundle and in every tile request, so it is not a secret, but it is kept out of logs where possible:
 

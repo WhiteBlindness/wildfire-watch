@@ -71,7 +71,8 @@ export interface SatelliteLayerPlan {
 }
 
 interface StyleReadyObservable {
-  isStyleLoaded(): boolean | void;
+  /** MapLibre returns undefined until the style document has been parsed. */
+  getStyle(): unknown;
   on(event: "style.load", listener: () => void): void;
   off(event: "style.load", listener: () => void): void;
 }
@@ -191,7 +192,10 @@ export function observeStyleReady(
   const synchronizeOnStyleLoad = () => synchronize();
 
   map.on("style.load", synchronizeOnStyleLoad);
-  if (map.isStyleLoaded() === true) synchronize();
+  // Custom layers only need the parsed style. isStyleLoaded() also waits for
+  // every source to load, so it can stay false after "style.load" has already
+  // fired; waiting for another one would then drop this change.
+  if (map.getStyle()) synchronize();
   return () => map.off("style.load", synchronizeOnStyleLoad);
 }
 

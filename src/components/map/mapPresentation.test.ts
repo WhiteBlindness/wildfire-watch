@@ -229,7 +229,8 @@ test("reapplies custom layers after a replacement style finishes loading", () =>
   let styleLoadListener: (() => void) | undefined;
   let synchronizations = 0;
   const map = {
-    isStyleLoaded: () => false,
+    // MapLibre returns no style until the replacement document has been parsed.
+    getStyle: () => undefined,
     on: (_event: "style.load", listener: () => void) => {
       styleLoadListener = listener;
     },
@@ -245,6 +246,34 @@ test("reapplies custom layers after a replacement style finishes loading", () =>
 
   styleLoadListener?.();
   assert.equal(synchronizations, 1);
+
+  stopObserving();
+  assert.equal(styleLoadListener, undefined);
+});
+
+test("synchronizes at once when the style is parsed but its sources are still loading", () => {
+  // After "style.load" has fired, isStyleLoaded() stays false until every
+  // source has loaded its tiles. Waiting for another "style.load" would then
+  // never apply a basemap or theme change made in that window.
+  let styleLoadListener: (() => void) | undefined;
+  let synchronizations = 0;
+  const map = {
+    getStyle: () => ({ layers: [] }),
+    on: (_event: "style.load", listener: () => void) => {
+      styleLoadListener = listener;
+    },
+    off: (_event: "style.load", listener: () => void) => {
+      if (styleLoadListener === listener) styleLoadListener = undefined;
+    },
+  };
+
+  const stopObserving = observeStyleReady(map, () => {
+    synchronizations += 1;
+  });
+  assert.equal(synchronizations, 1);
+
+  styleLoadListener?.();
+  assert.equal(synchronizations, 2, "a later replacement style is synchronized too");
 
   stopObserving();
   assert.equal(styleLoadListener, undefined);

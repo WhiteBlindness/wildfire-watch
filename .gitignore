@@ -39,6 +39,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# MapLibre worker files, copied from node_modules before each build
+/public/maplibre/
+
 # cloudflare / opennext
 /.open-next/
 /.wrangler/
