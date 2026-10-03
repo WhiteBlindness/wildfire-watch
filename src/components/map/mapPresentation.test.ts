@@ -14,6 +14,7 @@ import {
   DETAIL_MOSAIC_MAX_ZOOM,
   DETAIL_MOSAIC_MIN_ZOOM,
   type WaterLayerOverride,
+  withCartoKey,
 } from "./mapPresentation";
 import {
   OCEAN_BATHYMETRY_LAYER,
@@ -428,3 +429,18 @@ test("computeDetailCameraTarget handles an antimeridian-crossing mosaic without 
     `center longitude ${result.center.lng} must be in [-180, 180]`,
   );
 });
+
+test("adds the CARTO key only to CARTO https requests that lack one", () => {
+  assert.equal(withCartoKey("https://basemaps.cartocdn.com/gl/positron-gl-style/style.json", undefined),
+    "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json");
+  assert.equal(withCartoKey("https://basemaps.cartocdn.com/gl/positron-gl-style/style.json", "k1"),
+    "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json?key=k1");
+  assert.equal(withCartoKey("https://tiles.basemaps.cartocdn.com/vector/carto.streets/v1/3/4/2.mvt?lang=pt", "k1"),
+    "https://tiles.basemaps.cartocdn.com/vector/carto.streets/v1/3/4/2.mvt?lang=pt&key=k1");
+  assert.equal(withCartoKey("https://tiles.basemaps.cartocdn.com/x.pbf?key=other", "k1"), "https://tiles.basemaps.cartocdn.com/x.pbf?key=other");
+  assert.equal(withCartoKey("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/1/2/3", "k1"),
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/1/2/3", "never leaks the key to Esri");
+  assert.equal(withCartoKey("https://basemaps.cartocdn.com.evil.example/style.json", "k1"), "https://basemaps.cartocdn.com.evil.example/style.json");
+  assert.equal(withCartoKey("/api/fires", "k1"), "/api/fires");
+});
+

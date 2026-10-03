@@ -18,14 +18,21 @@ import {
   getWaterColorOverrides,
   observeStyleReady,
   computeDetailCameraTarget,
+  withCartoKey,
 } from "./mapPresentation";
 import { syncSatelliteLayers } from "./satelliteLayers";
 import { EMPTY_DETAIL_STATE, detailStateForSelection, withDetailPoints, type DetailState } from "./detailState";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
-// Free, no-API-key vector basemaps from CARTO — dark-matter fits the cinematic
-// dark theme, positron is the light-mode counterpart. Attribution is baked
-// into the style JSON already.
+// Inlined at build time; absent in local and test builds, where requests go out unchanged.
+const CARTO_API_KEY = process.env.NEXT_PUBLIC_CARTO_API_KEY;
+
+function addCartoKey(url: string): { url: string } {
+  return { url: withCartoKey(url, CARTO_API_KEY) };
+}
+
+// CARTO vector basemaps: dark-matter for the dark theme, positron for light.
+// Attribution is part of the style JSON.
 const MARKER_LAYER_ID = "fire-markers";
 const MARKER_HIT_AREA_LAYER_ID = "fire-marker-hit-area";
 const CLUSTER_LAYER_ID = "detection-clusters";
@@ -732,6 +739,7 @@ export default function FireMap({ detections, allDetections, selection, onSelect
       cursor={isHoveringInteractiveFeature ? "pointer" : "grab"}
       attributionControl={false}
       locale={mapUiStrings}
+      transformRequest={addCartoKey}
       onLoad={handleLoad}
     >
       <AttributionControl key={basemapMode} compact position="bottom-left" />
