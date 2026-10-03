@@ -225,10 +225,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
             </button>
           </div>
         ) : articles.length === 0 ? (
-          <div>
-            <NewsMessage>{t.fireDetail.newsEmpty}</NewsMessage>
-            <p className="mt-2 text-[11px] leading-4 text-foreground/65">{t.fireDetail.newsCoverageSinceDetection}</p>
-          </div>
+          <NewsMessage>{t.fireDetail.newsEmpty}</NewsMessage>
         ) : (
           <ul className="space-y-2">
             {articles.map((article) => (
@@ -250,7 +247,8 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
             ))}
           </ul>
         )}
-        <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/65">{t.fireDetail.newsSource}</p>
+        <p className="mt-2.5 text-[11px] leading-4 text-foreground/65">{t.fireDetail.newsSearchNote}</p>
+        <p className="mt-1.5 text-[11px] uppercase tracking-[0.08em] text-foreground/65">{t.fireDetail.newsSource}</p>
       </section>
     </div>
   );

@@ -1,6 +1,17 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import type { CachedFirmsPoint } from "@/lib/wildfire/firms-cache";
 import { parseCsv, toPoint } from "@/lib/wildfire/firms-csv";
+import {
+  UpstreamBusyError,
+  ceilTo,
+  createGuardedLookup,
+  edgeCachedInit,
+  errorName,
+  floorTo,
+  guardedLookup,
+  upstreamBusyResponse,
+  type GuardedLookup,
+} from "@/lib/server/upstream-guard";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +19,14 @@ const FIRMS_BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv";
 const FIRMS_SOURCE = "VIIRS_SNPP_NRT";
 const DETAIL_CACHE_TTL_SECONDS = 1_800; // 30 minutes
 const MAX_BBOX_SPAN_DEGREES = 5;
+/**
+ * Bounding boxes are grown outward to this grid, so boxes that differ by a few
+ * metres share one FIRMS call and one cache entry. The extra margin only adds
+ * neighbouring detections to the map.
+ */
+const BBOX_GRID_DEGREES = 0.1;
+/** The FIRMS area API accepts 1 to 5 days. */
+const MAX_DAYS = 5;
 const SAFETY_CAP_POINTS = 20_000;
 const UPSTREAM_TIMEOUT_MS = 15_000;
 // The FIRMS NRT archive realistically serves roughly 60 days of data.
@@ -33,22 +52,27 @@ export interface FireDetailPayload {
   points: CachedFirmsPoint[];
 }
 
-interface DetailKvNamespace {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
-}
-
 interface DetailEnv {
-  FIRMS_CACHE: DetailKvNamespace;
   FIRMS_MAP_KEY: string;
+  /** Per-isolate cache and FIRMS call budget; injectable for tests. */
+  lookups?: GuardedLookup<string>;
 }
 
-class FirmsMapKeyMissingError extends Error {
-  constructor() {
-    super("FIRMS_MAP_KEY is not configured");
-    this.name = "FirmsMapKeyMissingError";
-  }
+/**
+ * Responses are kept in memory, never in KV: every distinct box would otherwise
+ * cost a KV write, and the free plan's daily write quota is shared with the
+ * scheduled ingest. Entries can be a few megabytes, hence the small count.
+ */
+export function createDetailLookups(): GuardedLookup<string> {
+  return createGuardedLookup<string>({
+    maxEntries: 12,
+    ttlMs: DETAIL_CACHE_TTL_SECONDS * 1_000,
+    budgetLimit: 20,
+    budgetWindowMs: 60_000,
+  });
 }
+
+const detailLookups = createDetailLookups();
 
 /**
  * Resolves the FIRMS map key from whichever source has it.
@@ -87,12 +111,8 @@ function parseFiniteCoord(value: string | null, min: number, max: number): numbe
 function parseDays(value: string | null): number | null {
   if (value === null) return 3;
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10) return null;
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_DAYS) return null;
   return parsed;
-}
-
-function roundCoord(value: number): number {
-  return Math.round(value * 100) / 100;
 }
 
 /**
@@ -128,23 +148,8 @@ function parseStartDate(value: string | null): string | null | { error: string }
   return value;
 }
 
-function buildCacheKey(
-  west: number,
-  south: number,
-  east: number,
-  north: number,
-  days: number,
-  start: string | null,
-): string {
-  const rw = roundCoord(west);
-  const rs = roundCoord(south);
-  const re = roundCoord(east);
-  const rn = roundCoord(north);
-  const base = `fire-detail:v1:${rw},${rs},${re},${rn}:${days}`;
-  // Only append the start segment when present so undated rolling-window keys
-  // remain byte-identical to the pre-feature format (existing KV entries are
-  // still served; no cache stampede on deploy).
-  return start !== null ? `${base}:${start}` : base;
+function buildCacheKey(bbox: [number, number, number, number], days: number, start: string | null): string {
+  return `${bbox.join(",")}:${days}:${start ?? "latest"}`;
 }
 
 function buildAreaUrl(
@@ -175,7 +180,7 @@ export async function handleFireDetailRequest(request: Request, env: DetailEnv):
   if (south === null) return invalidRequest("Invalid or missing parameter: south (must be -90..90)");
   if (east === null) return invalidRequest("Invalid or missing parameter: east (must be -180..180)");
   if (north === null) return invalidRequest("Invalid or missing parameter: north (must be -90..90)");
-  if (days === null) return invalidRequest("Invalid parameter: days (must be integer 1-10)");
+  if (days === null) return invalidRequest(`Invalid parameter: days (must be integer 1-${MAX_DAYS})`);
 
   if (east <= west) return invalidRequest("Inverted or zero-width bbox: east must be greater than west");
   if (north <= south) return invalidRequest("Inverted or zero-height bbox: north must be greater than south");
@@ -204,104 +209,92 @@ export async function handleFireDetailRequest(request: Request, env: DetailEnv):
     );
   }
 
-  const cacheKey = buildCacheKey(west, south, east, north, days, start);
-  try {
-    const cached = await env.FIRMS_CACHE.get(cacheKey);
-    if (cached) {
-      return new Response(cached, {
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          ...DETAIL_CACHE_HEADERS,
-          "X-Wildfire-Source": "cloudflare-kv",
-        },
-      });
-    }
-  } catch {
-    // KV read failure is non-fatal; proceed to fetch from NASA.
-  }
+  const bbox: [number, number, number, number] = [
+    Math.max(-180, floorTo(west, BBOX_GRID_DEGREES)),
+    Math.max(-90, floorTo(south, BBOX_GRID_DEGREES)),
+    Math.min(180, ceilTo(east, BBOX_GRID_DEGREES)),
+    Math.min(90, ceilTo(north, BBOX_GRID_DEGREES)),
+  ];
 
-  let csv: string;
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-    try {
-      const response = await fetch(
-        buildAreaUrl(mapKey, west, south, east, north, days, start),
-        { cache: "no-store", headers: { Accept: "text/csv" }, signal: controller.signal },
-      );
-      if (!response.ok) throw new FirmsUpstreamError(response.status);
-      csv = await response.text();
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const { value: body, cached } = await guardedLookup(
+      env.lookups ?? detailLookups,
+      buildCacheKey(bbox, days, start),
+      () => loadDetail(mapKey, bbox, days, start),
+    );
+    return new Response(body, {
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        ...DETAIL_CACHE_HEADERS,
+        "X-Wildfire-Source": cached ? "memory" : "nasa-firms",
+      },
+    });
   } catch (error) {
-    if (error instanceof FirmsMapKeyMissingError) {
-      return Response.json(
-        { error: "Fire detail unavailable: upstream API key not configured" },
-        { status: 503, headers: DETAIL_ERROR_HEADERS },
-      );
-    }
-    const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-    console.error(`NASA FIRMS area fetch failed (${reason})`);
+    if (error instanceof UpstreamBusyError) return upstreamBusyResponse(error);
+    // Name and status only: a fetch error message can contain the request URL, and with it the map key.
+    console.error(`NASA FIRMS area request failed (${error instanceof FirmsUpstreamError ? error.message : errorName(error)})`);
+    const invalidData = error instanceof FirmsCsvError;
     return Response.json(
-      { error: "Fire detail unavailable: upstream error" },
+      { error: invalidData ? "Fire detail unavailable: invalid upstream data" : "Fire detail unavailable: upstream error" },
       { status: 502, headers: DETAIL_ERROR_HEADERS },
     );
   }
+}
+
+class FirmsCsvError extends Error {
+  constructor() {
+    super("FIRMS area CSV could not be parsed");
+    this.name = "FirmsCsvError";
+  }
+}
+
+async function loadDetail(
+  mapKey: string,
+  bbox: [number, number, number, number],
+  days: number,
+  start: string | null,
+): Promise<string> {
+  const [west, south, east, north] = bbox;
+  const response = await fetch(
+    buildAreaUrl(mapKey, west, south, east, north, days, start),
+    edgeCachedInit({ headers: { Accept: "text/csv" }, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) }, DETAIL_CACHE_TTL_SECONDS),
+  );
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new FirmsUpstreamError(response.status);
+  }
+  const csv = await response.text();
 
   let points: CachedFirmsPoint[];
   try {
-    const { rows } = parseCsv(csv);
     // Apply safety cap — no downsampling or spatial selection on this path.
-    const capped = rows.slice(0, SAFETY_CAP_POINTS);
-    points = capped.map(toPoint);
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    console.error(`FIRMS area CSV parse failed (${reason})`);
-    return Response.json(
-      { error: "Fire detail unavailable: invalid upstream data" },
-      { status: 502, headers: DETAIL_ERROR_HEADERS },
-    );
+    points = parseCsv(csv).rows.slice(0, SAFETY_CAP_POINTS).map(toPoint);
+  } catch {
+    throw new FirmsCsvError();
   }
 
   const payload: FireDetailPayload = {
     version: 1,
     source: "NASA FIRMS VIIRS_SNPP_NRT",
     generatedAt: new Date().toISOString(),
-    bbox: [west, south, east, north],
+    bbox,
     days,
     start,
     points,
   };
-
-  const body = JSON.stringify(payload);
-  try {
-    await env.FIRMS_CACHE.put(cacheKey, body, { expirationTtl: DETAIL_CACHE_TTL_SECONDS });
-  } catch {
-    // KV write failure is non-fatal; the response is still returned.
-  }
-
-  return new Response(body, {
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      ...DETAIL_CACHE_HEADERS,
-      "X-Wildfire-Source": "nasa-firms",
-      "X-Wildfire-Point-Count": String(points.length),
-    },
-  });
+  return JSON.stringify(payload);
 }
 
 export async function GET(request: Request): Promise<Response> {
   try {
     const { env } = await getCloudflareContext({ async: true });
     return handleFireDetailRequest(request, {
-      FIRMS_CACHE: env.FIRMS_CACHE as unknown as DetailKvNamespace,
       // Binding is empty in `next dev` (secret not in wrangler.jsonc vars);
       // resolveFirmsMapKey falls back to process.env so local dev works too.
       FIRMS_MAP_KEY: resolveFirmsMapKey(env.FIRMS_MAP_KEY),
     });
   } catch (error) {
-    console.error("Unable to obtain Cloudflare context for fire detail route", error);
+    console.error("Unable to obtain Cloudflare context for fire detail route", errorName(error));
     return Response.json({ error: "Fire detail unavailable" }, { status: 503, headers: DETAIL_ERROR_HEADERS });
   }
 }

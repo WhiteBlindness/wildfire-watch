@@ -1,25 +1,54 @@
 import {
   buildGoogleNewsQueries,
-  getEffectiveNewsCutoff,
+  newsCutoff,
   parseRssArticles,
   type NewsArticle,
   type NewsQueryInput,
 } from "@/lib/news/rss";
+import {
+  UpstreamBusyError,
+  createGuardedLookup,
+  edgeCachedInit,
+  errorName,
+  guardedLookup,
+  upstreamBusyResponse,
+} from "@/lib/server/upstream-guard";
 
 export const dynamic = "force-dynamic";
 
 const NEWS_CACHE_HEADERS = {
-  "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=3600",
+  "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
 };
 const NEWS_ERROR_HEADERS = { "Cache-Control": "no-store" };
 const NEWS_REQUEST_TIMEOUT_MS = 10_000;
 const NEWS_RSS_MAX_BYTES = 256 * 1024;
+const NEWS_CACHE_MS = 15 * 60 * 1_000;
+const EDGE_CACHE_SECONDS = 15 * 60;
+const MAX_LOCATION_LENGTH = 100;
+const MAX_AREA_LENGTH = 60;
+/**
+ * Place names as the reverse geocoder writes them: letters in any script,
+ * digits, spaces and the separators it uses. Anything else is not a place name.
+ */
+const PLACE_NAME_PATTERN = /^[\p{L}\p{M}\p{N} ,.'’()/-]+$/u;
+
+/**
+ * One lookup can make up to six RSS requests (three query tiers, each with a
+ * fallback), so results are cached by normalised place and the number of new
+ * lookups per isolate is capped. Google and Bing throttle shared egress
+ * addresses; amplifying a burst would get the feeds blocked for every visitor.
+ */
+const lookups = createGuardedLookup<NewsArticle[]>({
+  maxEntries: 300,
+  ttlMs: NEWS_CACHE_MS,
+  budgetLimit: 12,
+  budgetWindowMs: 60_000,
+});
 
 interface NewsRequest extends NewsQueryInput {
   location: string;
   region: string;
   country: string;
-  startedAt: string;
   locale: "pt" | "en";
 }
 
@@ -75,16 +104,17 @@ async function fetchRssArticles(endpoint: URL, timeoutMs: number): Promise<NewsA
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetch(endpoint, edgeCachedInit({
       headers: {
         Accept: "application/rss+xml, application/xml;q=0.9",
         "User-Agent": "Mozilla/5.0 (compatible; WildfireWatch/1.0)",
       },
       signal: controller.signal,
-    });
+    }, EDGE_CACHE_SECONDS));
     if (!response.ok) throw new NewsRssHttpError(response.status);
     return parseRssArticles(await readLimitedResponseText(response), {
       requireFireKeyword: true,
+      publishedAfter: newsCutoff(Date.now()),
       limit: 3,
     });
   } finally {
@@ -129,10 +159,6 @@ interface TierFetchResult {
   error?: unknown;
 }
 
-function errorReason(error: unknown): string {
-  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-}
-
 function isNetworkError(error: unknown): boolean {
   return error instanceof TypeError || (error instanceof Error && error.name === "AbortError");
 }
@@ -156,7 +182,7 @@ async function fetchQueryTier(
     return { articles, receivedResponse: true };
   } catch (googleError) {
     if (!isNetworkError(googleError)) throw googleError;
-    console.warn(`Google News RSS unavailable; using direct RSS fallback (${errorReason(googleError)})`);
+    console.warn(`Google News RSS unavailable; using the Bing RSS fallback (${errorName(googleError)})`);
     try {
       const articles = await fetchRssArticles(
         buildBingEndpoint(request, query),
@@ -164,57 +190,54 @@ async function fetchQueryTier(
       );
       return { articles, receivedResponse: true };
     } catch (bingError) {
-      console.warn(`Bing News RSS fallback unavailable (${errorReason(bingError)})`);
+      console.warn(`Bing News RSS fallback unavailable (${errorName(bingError)})`);
       return { articles: [], receivedResponse: false, error: bingError };
     }
   }
 }
 
+/** Collapses whitespace; returns null for text that is too long or not a place name. */
+function readPlace(value: string | null, maxLength: number): string | null {
+  const text = (value ?? "").replace(/\s+/g, " ").trim();
+  if (text.length > maxLength) return null;
+  if (text && !PLACE_NAME_PATTERN.test(text)) return null;
+  return text;
+}
+
+async function searchNews(newsRequest: NewsRequest): Promise<NewsArticle[]> {
+  const deadlineAt = Date.now() + NEWS_REQUEST_TIMEOUT_MS;
+  let receivedResponse = false;
+  let lastError: unknown;
+  for (const query of buildGoogleNewsQueries(newsRequest)) {
+    const result = await fetchQueryTier(query, newsRequest, deadlineAt);
+    receivedResponse ||= result.receivedResponse;
+    lastError = result.error ?? lastError;
+    if (result.articles.length > 0) return result.articles.slice(0, 3);
+  }
+  if (!receivedResponse && lastError) throw lastError;
+  return [];
+}
+
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const location = url.searchParams.get("location")?.trim() ?? "";
-  const region = url.searchParams.get("region")?.trim() ?? "";
-  const country = url.searchParams.get("country")?.trim() ?? "";
-  const startedAt = url.searchParams.get("startedAt")?.trim() ?? "";
+  const location = readPlace(url.searchParams.get("location"), MAX_LOCATION_LENGTH);
+  const region = readPlace(url.searchParams.get("region"), MAX_AREA_LENGTH);
+  const country = readPlace(url.searchParams.get("country"), MAX_AREA_LENGTH);
   const rawLocale = url.searchParams.get("locale");
 
-  if (location.length < 2 || location.length > 120) return invalidRequest("Invalid location");
-  if (region.length > 120 || country.length > 120) return invalidRequest("Invalid geography");
-  if (!getEffectiveNewsCutoff(startedAt)) return invalidRequest("Invalid startedAt");
+  if (location === null || location.length < 2) return invalidRequest("Invalid location");
+  if (region === null || country === null) return invalidRequest("Invalid geography");
   if (rawLocale !== null && rawLocale !== "pt" && rawLocale !== "en") return invalidRequest("Invalid locale");
 
-  const newsRequest: NewsRequest = {
-    location,
-    region,
-    country,
-    startedAt,
-    locale: rawLocale === "pt" ? "pt" : "en",
-  };
+  const newsRequest: NewsRequest = { location, region, country, locale: rawLocale === "pt" ? "pt" : "en" };
+  const key = [newsRequest.locale, location, region, country].join("|").toLocaleLowerCase("und");
 
   try {
-    const deadlineAt = Date.now() + NEWS_REQUEST_TIMEOUT_MS;
-    let receivedResponse = false;
-    let lastError: unknown;
-    for (const query of buildGoogleNewsQueries(newsRequest)) {
-      const result = await fetchQueryTier(query, newsRequest, deadlineAt);
-      receivedResponse ||= result.receivedResponse;
-      lastError = result.error ?? lastError;
-      if (result.articles.length > 0) {
-        return Response.json(
-          { location, articles: result.articles.slice(0, 3) },
-          { headers: NEWS_CACHE_HEADERS },
-        );
-      }
-    }
-
-    if (!receivedResponse && lastError) throw lastError;
-    return Response.json(
-      { location, articles: [] },
-      { headers: NEWS_CACHE_HEADERS },
-    );
+    const { value: articles } = await guardedLookup(lookups, key, () => searchNews(newsRequest));
+    return Response.json({ location, articles }, { headers: NEWS_CACHE_HEADERS });
   } catch (error) {
-    const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-    console.error(`Local wildfire news lookup failed (${reason})`);
+    if (error instanceof UpstreamBusyError) return upstreamBusyResponse(error);
+    console.error(`Local wildfire news lookup failed (${errorName(error)})`);
     return Response.json({ error: "News unavailable" }, { status: 502, headers: NEWS_ERROR_HEADERS });
   }
 }

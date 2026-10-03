@@ -109,6 +109,54 @@ test("OpenAQ air-quality route", async (suite) => {
     assert.equal(fetchCalled, false);
   });
 
+  await suite.test("nearby detections share one OpenAQ search but keep their own distance", async () => {
+    let calls = 0;
+    globalThis.fetch = (async (input) => {
+      calls += 1;
+      const url = new URL(String(input));
+      if (url.pathname === "/v3/locations") {
+        return jsonResponse({
+          results: [{
+            id: 90,
+            name: "Coimbra monitor",
+            coordinates: { latitude: 40.2, longitude: -8.42 },
+            sensors: [{ id: 900, parameter: { id: 2, name: "pm25", units: "µg/m³" } }],
+          }],
+        });
+      }
+      return jsonResponse({ results: [{ value: 8, datetime: { utc: "2026-08-03T08:00:00Z" }, sensorsId: 900 }] });
+    }) as typeof fetch;
+
+    const first = await (await GET(request(40.211, -8.401))).json() as { reading: { distanceKm: number } };
+    const callsAfterFirst = calls;
+    const second = await (await GET(request(40.2149, -8.4049))).json() as { reading: { distanceKm: number } };
+
+    assert.equal(calls, callsAfterFirst, "the second lookup must be served from memory");
+    assert.equal(first.reading.distanceKm, Math.round(distanceBetweenKm(40.211, -8.401, 40.2, -8.42) * 10) / 10);
+    assert.equal(second.reading.distanceKm, Math.round(distanceBetweenKm(40.2149, -8.4049, 40.2, -8.42) * 10) / 10);
+  });
+
+  await suite.test("a spent lookup budget answers 503 without calling OpenAQ", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return jsonResponse({ results: [] });
+    }) as typeof fetch;
+
+    const statuses: number[] = [];
+    for (let index = 0; index < 10; index += 1) {
+      const response = await GET(request(-30 + index, 20));
+      statuses.push(response.status);
+    }
+    const busy = statuses.filter((status) => status === 503).length;
+    assert.ok(busy >= 2, `expected the per-isolate budget to refuse some lookups, got ${statuses.join(",")}`);
+    const callsBefore = calls;
+    const refused = await GET(request(-10, 20));
+    assert.equal(refused.status, 503);
+    assert.ok(Number(refused.headers.get("retry-after")) >= 1);
+    assert.equal(calls, callsBefore);
+  });
+
   assert.equal(pm25ToAqi(12).aqi, 50);
   assert.equal(pm25ToAqi(35.4).aqi, 100);
   assert.ok(distanceBetweenKm(34.05, -118.25, 34.05, -117.7) > 25);

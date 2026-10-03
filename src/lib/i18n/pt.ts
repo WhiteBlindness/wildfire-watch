@@ -139,7 +139,7 @@ const pt: Dictionary = {
     newsUnavailable: "As notícias locais estão temporariamente indisponíveis.",
     newsEmpty: "Não foram encontradas notícias locais recentes sobre incêndios.",
     newsRetry: "Tentar novamente",
-    newsCoverageSinceDetection: "A pesquisa começa na primeira deteção desta seleção.",
+    newsSearchNote: "Encontradas pela pesquisa do nome do local. As notícias dos últimos 30 dias podem referir-se a outros incêndios.",
     newsSource: "Google News RSS · pesquisa automática, não verificada",
     newsOpenLabel: "Abrir artigo num novo separador",
     newsAwaitingLocation: "A aguardar uma localização precisa...",

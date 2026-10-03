@@ -1,3 +1,13 @@
+import {
+  UpstreamBusyError,
+  createGuardedLookup,
+  edgeCachedInit,
+  errorName,
+  guardedLookup,
+  quantize,
+  upstreamBusyResponse,
+} from "@/lib/server/upstream-guard";
+
 export const dynamic = "force-dynamic";
 
 const OPENAQ_BASE_URL = "https://api.openaq.org/v3";
@@ -6,6 +16,17 @@ const OPENAQ_RADIUS_LIMIT_METERS = 25_000;
 const SEARCH_RADIUS_METERS = 100_000;
 const MAX_CANDIDATE_LOCATIONS = 4;
 const UPSTREAM_TIMEOUT_MS = 7_000;
+/**
+ * The search covers 100 km, so the lookup point is rounded to about 2 km:
+ * nearby detections share one OpenAQ search. The distance shown is still
+ * measured from the detection itself. OpenAQ allows 60 requests per minute per
+ * key and one lookup makes up to seven, hence the small per-isolate budget.
+ */
+const LOOKUP_STEP_DEGREES = 0.02;
+const READING_CACHE_MS = 15 * 60 * 1_000;
+const EDGE_CACHE_SECONDS = 15 * 60;
+const SUCCESS_HEADERS = { "Cache-Control": "public, max-age=300, stale-while-revalidate=3600" };
+const ERROR_HEADERS = { "Cache-Control": "no-store" };
 
 type AirQualityCategory = "good" | "moderate" | "unhealthy-sensitive" | "unhealthy" | "very-unhealthy" | "hazardous";
 
@@ -32,6 +53,8 @@ interface OpenAqLatestMeasurement {
 interface LocationCandidate {
   id: number;
   name: string | null;
+  lat: number;
+  lon: number;
   distanceKm: number;
   pm25SensorIds: Set<number>;
   unit: string;
@@ -48,6 +71,19 @@ interface Pm25Reading {
   source: "OpenAQ";
   aqiMethod: "US EPA PM2.5 breakpoint estimate";
 }
+
+/** What is cached per rounded point: the reading plus the monitor position, so distance can be re-measured. */
+interface StationReading extends Omit<Pm25Reading, "distanceKm"> {
+  stationLat: number;
+  stationLon: number;
+}
+
+const readings = createGuardedLookup<StationReading | null>({
+  maxEntries: 500,
+  ttlMs: READING_CACHE_MS,
+  budgetLimit: 8,
+  budgetWindowMs: 60_000,
+});
 
 function finiteCoordinate(value: string | null, min: number, max: number): number | null {
   if (value === null) return null;
@@ -120,10 +156,10 @@ async function openAqFetch<T>(path: string, apiKey: string): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
-    const response = await fetch(`${OPENAQ_BASE_URL}${path}`, {
+    const response = await fetch(`${OPENAQ_BASE_URL}${path}`, edgeCachedInit({
       headers: { "X-API-Key": apiKey, Accept: "application/json" },
       signal: controller.signal,
-    });
+    }, EDGE_CACHE_SECONDS));
     if (!response.ok) throw new Error(`OpenAQ request failed: ${response.status}`);
     return response.json() as Promise<T>;
   } finally {
@@ -149,6 +185,8 @@ function toCandidates(locations: OpenAqLocation[], lat: number, lon: number): Lo
     return [{
       id: location.id!,
       name: location.name ?? location.locality ?? null,
+      lat: locationLat!,
+      lon: locationLon!,
       distanceKm,
       pm25SensorIds,
       unit: pm25Sensors.find((sensor) => sensor.parameter?.units)?.parameter?.units ?? "µg/m³",
@@ -191,7 +229,7 @@ async function findCandidateLocations(lat: number, lon: number, apiKey: string):
   return toCandidates([...uniqueLocations.values()], lat, lon);
 }
 
-async function getCandidateReading(candidate: LocationCandidate, apiKey: string): Promise<Pm25Reading | null> {
+async function getCandidateReading(candidate: LocationCandidate, apiKey: string): Promise<StationReading | null> {
   const params = new URLSearchParams({ limit: "100", page: "1" });
   const payload = await openAqFetch<{ results?: OpenAqLatestMeasurement[] }>(
     `/locations/${candidate.id}/latest?${params}`,
@@ -212,14 +250,15 @@ async function getCandidateReading(candidate: LocationCandidate, apiKey: string)
     category,
     observedAt: latest.datetime?.utc ?? new Date().toISOString(),
     stationName: candidate.name,
-    distanceKm: Math.round(candidate.distanceKm * 10) / 10,
+    stationLat: candidate.lat,
+    stationLon: candidate.lon,
     unit: candidate.unit,
     source: "OpenAQ",
     aqiMethod: "US EPA PM2.5 breakpoint estimate",
   };
 }
 
-export async function findNearestPm25Reading(lat: number, lon: number, apiKey: string): Promise<Pm25Reading | null> {
+export async function findNearestPm25Reading(lat: number, lon: number, apiKey: string): Promise<StationReading | null> {
   const candidates = await findCandidateLocations(lat, lon, apiKey);
   if (candidates.length === 0) return null;
 
@@ -227,40 +266,42 @@ export async function findNearestPm25Reading(lat: number, lon: number, apiKey: s
     candidates.slice(0, MAX_CANDIDATE_LOCATIONS).map((candidate) => getCandidateReading(candidate, apiKey)),
   );
   const reading = readings
-    .filter((result): result is PromiseFulfilledResult<Pm25Reading | null> => result.status === "fulfilled")
+    .filter((result): result is PromiseFulfilledResult<StationReading | null> => result.status === "fulfilled")
     .map((result) => result.value)
-    .find((result): result is Pm25Reading => result !== null);
+    .find((result): result is StationReading => result !== null);
   if (reading) return reading;
   if (readings.every((result) => result.status === "rejected")) throw new Error("All OpenAQ latest-reading requests failed");
   return null;
+}
+
+function toPublicReading(reading: StationReading, lat: number, lon: number): Pm25Reading {
+  const { stationLat, stationLon, ...rest } = reading;
+  return { ...rest, distanceKm: Math.round(distanceBetweenKm(lat, lon, stationLat, stationLon) * 10) / 10 };
 }
 
 export async function GET(request: Request): Promise<Response> {
   const requestUrl = new URL(request.url);
   const lat = finiteCoordinate(requestUrl.searchParams.get("lat"), -90, 90);
   const lon = finiteCoordinate(requestUrl.searchParams.get("lon"), -180, 180);
-  if (lat === null || lon === null) return Response.json({ error: "Invalid coordinates" }, { status: 400 });
+  if (lat === null || lon === null) return Response.json({ error: "Invalid coordinates" }, { status: 400, headers: ERROR_HEADERS });
 
   const apiKey = process.env.OPENAQ_API_KEY;
   if (!apiKey) {
-    return Response.json(
-      { reading: null, availability: "unconfigured" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
+    return Response.json({ reading: null, availability: "unconfigured" }, { status: 503, headers: ERROR_HEADERS });
   }
 
+  const qLat = quantize(lat, LOOKUP_STEP_DEGREES);
+  const qLon = quantize(lon, LOOKUP_STEP_DEGREES);
   try {
-    const reading = await findNearestPm25Reading(lat, lon, apiKey);
+    const { value } = await guardedLookup(readings, `${qLat}:${qLon}`, () => findNearestPm25Reading(qLat, qLon, apiKey));
+    const reading = value ? toPublicReading(value, lat, lon) : null;
     return Response.json(
       { reading, availability: reading ? "available" : "no-nearby-monitor", searchRadiusKm: SEARCH_RADIUS_METERS / 1_000 },
-      { headers: { "Cache-Control": "public, max-age=300, s-maxage=900, stale-while-revalidate=3600" } },
+      { headers: SUCCESS_HEADERS },
     );
   } catch (error) {
-    const reason = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-    console.error(`OpenAQ lookup failed (${reason})`);
-    return Response.json(
-      { error: "Air quality unavailable", availability: "upstream-error" },
-      { status: 502, headers: { "Cache-Control": "no-store" } },
-    );
+    if (error instanceof UpstreamBusyError) return upstreamBusyResponse(error, { availability: "upstream-busy" });
+    console.error(`OpenAQ lookup failed (${errorName(error)})`);
+    return Response.json({ error: "Air quality unavailable", availability: "upstream-error" }, { status: 502, headers: ERROR_HEADERS });
   }
 }
