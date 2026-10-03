@@ -2,58 +2,49 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import type { FeedLoadStatus, FeedFreshness, WildfireEvent, WildfireFeedSnapshot } from "@/lib/wildfire/types";
+import type { DetectionFeedSnapshot, FeedLoadStatus, ThermalDetection } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
-import { calculateOverviewMetrics, resolveEventIntensityMw, selectStrongestEvents } from "@/lib/wildfire/overview-metrics";
+import { calculateOverviewMetrics, selectStrongestDetections } from "@/lib/wildfire/overview-metrics";
+import { assessFeedHealth, type FeedHealthAssessment } from "@/lib/wildfire/feed-health";
+import { interpolate } from "@/lib/i18n/dictionaries";
+import { formatDateTime, formatDecimal, formatRelative, formatShortUtcTime } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
+import type { Dictionary, Locale } from "@/lib/i18n/types";
 import PanelFooter from "./PanelFooter";
 
-const FEED_STALE_AFTER_MS = 90 * 60 * 1000;
-const STRONGEST_EVENT_LIMIT = 5;
+const STRONGEST_DETECTION_LIMIT = 5;
 
 interface GlobalOverviewProps {
-  events: WildfireEvent[];
+  detections: ThermalDetection[];
   countries: string[];
   selectedCountry: string;
   onCountryChange: (country: string) => void;
-  onSelectEvent: (event: WildfireEvent) => void;
-  feedSnapshot: WildfireFeedSnapshot | null;
+  onSelectDetection: (detection: ThermalDetection) => void;
+  feedSnapshot: DetectionFeedSnapshot | null;
   feedState: FeedLoadStatus;
 }
 
 export default function GlobalOverview({
-  events,
+  detections,
   countries,
   selectedCountry,
   onCountryChange,
-  onSelectEvent,
+  onSelectDetection,
   feedSnapshot,
   feedState,
 }: GlobalOverviewProps) {
   const { locale, t } = useLocale();
   const [now, setNow] = useState<number | null>(null);
-  const totalFoci = events.length;
-  const metrics = useMemo(() => calculateOverviewMetrics(events), [events]);
-  const strongestEvents = useMemo(() => selectStrongestEvents(events, STRONGEST_EVENT_LIMIT), [events]);
-  const freshness = useMemo(
-    () => getFeedFreshness(feedSnapshot, feedState, now),
-    [feedSnapshot, feedState, now],
-  );
-  const parsedGeneratedAt = feedSnapshot?.generatedAt ? Date.parse(feedSnapshot.generatedAt) : Number.NaN;
-  const hasValidGeneratedAt = Number.isFinite(parsedGeneratedAt);
-  const relativeFreshness = hasValidGeneratedAt && now !== null
-    ? formatRelativeFreshness(feedSnapshot!.generatedAt!, now, locale, t.overview.freshnessUpdated)
-    : null;
-  const exactTimestamp = hasValidGeneratedAt
-    ? new Intl.DateTimeFormat(locale === "pt" ? "pt-PT" : "en-GB", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(parsedGeneratedAt))
-    : null;
-  const sourceId = feedSnapshot?.sourceId ?? "NASA FIRMS VIIRS_SNPP_NRT";
-  const sourceLabel = feedSnapshot?.sourceLabel ?? "NASA FIRMS Satellite Telemetry";
-  const lastUpdateText = exactTimestamp
-    ?? (feedState === "loading" && !feedSnapshot ? t.overview.freshnessLoading : t.overview.freshnessUnavailable);
+  const metrics = useMemo(() => calculateOverviewMetrics(detections), [detections]);
+  const strongest = useMemo(() => selectStrongestDetections(detections, STRONGEST_DETECTION_LIMIT), [detections]);
+  const provenance = feedSnapshot?.provenance ?? null;
+  const health = useMemo(() => assessFeedHealth({
+    snapshotGeneratedAt: provenance?.processedAt ?? null,
+    ingest: feedSnapshot?.ingest ?? null,
+    loadStatus: feedState,
+    // Before the first clock tick, judge the snapshot against its own build time.
+    now: now ?? (provenance ? Date.parse(provenance.processedAt) : 0),
+  }), [feedSnapshot, feedState, now, provenance]);
 
   useEffect(() => {
     const initialTimer = window.setTimeout(() => setNow(Date.now()), 0);
@@ -64,32 +55,55 @@ export default function GlobalOverview({
     };
   }, []);
 
+  const message = healthMessage(health, t.overview, locale);
+  const tone = health.state === "degraded" || health.state === "stale"
+    ? "border-amber-400/35 bg-amber-500/8"
+    : health.state === "unavailable" ? "border-red-400/35 bg-red-500/8" : "border-border/60 bg-surface-muted/35";
+
   return (
     <div className="flex h-full flex-col gap-4 p-5">
       <div>
         <h2 className="text-lg font-semibold text-foreground">{t.overview.title}</h2>
-        <p className="text-sm text-foreground/60">{t.overview.subtitle}</p>
+        <p className="text-sm text-foreground/65">{t.overview.subtitle}</p>
       </div>
 
-      <section
-        aria-label={`${t.overview.sourceLabel}: ${sourceLabel}`}
-        className={`rounded-xl border p-3.5 backdrop-blur-xl ${freshness === "stale" ? "border-amber-400/35 bg-amber-500/8" : freshness === "unavailable" ? "border-red-400/35 bg-red-500/8" : "border-border/60 bg-surface-muted/35"}`}
-      >
+      <section aria-labelledby="feed-source-title" className={`rounded-xl border p-3.5 backdrop-blur-xl ${tone}`}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65">{t.overview.sourceLabel}</p>
-            <p className="mt-1 break-words text-sm font-semibold text-foreground">{sourceLabel}</p>
+            <p id="feed-source-title" className="mt-1 break-words text-sm font-semibold text-foreground">
+              {provenance ? `${provenance.dataset.provider} · ${provenance.dataset.product}` : "NASA FIRMS"}
+            </p>
+            {provenance && <p className="mt-0.5 text-xs text-foreground/65">{provenance.dataset.instrument}</p>}
           </div>
-          <FreshnessBadge freshness={freshness} labels={t.overview} />
+          <HealthBadge state={health.state} labels={t.overview} />
         </div>
-        <dl className="mt-3 border-t border-border/45 pt-3 text-xs">
-          <div className="min-w-0">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/65">{t.overview.sourceIdentifier}</dt>
-            <dd className="mt-1 break-words font-mono text-[11px] tabular-nums text-foreground/75">{sourceId}</dd>
-          </div>
-        </dl>
-        {freshness === "stale" && (
-          <p className="mt-3 text-xs leading-5 text-amber-800 dark:text-amber-200">{t.overview.staleLastKnown}</p>
+        {message && (
+          <p data-testid="feed-health-message" className="mt-3 text-xs leading-5 text-amber-800 dark:text-amber-200">{message}</p>
+        )}
+        {provenance && (
+          <dl className="mt-3 grid gap-2 border-t border-border/45 pt-3 text-xs">
+            <HealthRow label={t.overview.metricLastUpdate}>
+              <time dateTime={provenance.processedAt}>{formatDateTime(provenance.processedAt, locale)}</time>
+              {now !== null && (
+                <span className="text-foreground/65"> · {formatRelative(provenance.processedAt, now, locale, t.overview.updatedRelative)}</span>
+              )}
+            </HealthRow>
+            <HealthRow label={t.overview.lastAttemptLabel}>
+              {health.lastAttemptAt ? (
+                <>
+                  <time dateTime={health.lastAttemptAt}>{formatDateTime(health.lastAttemptAt, locale)}</time>
+                  {" · "}
+                  {feedSnapshot?.ingest?.outcome === "failure" ? t.overview.attemptFailed : t.overview.attemptSucceeded}
+                </>
+              ) : t.overview.ingestUnknown}
+            </HealthRow>
+            {provenance.retrievedAt && (
+              <HealthRow label={t.overview.lastSuccessLabel}>
+                <time dateTime={provenance.retrievedAt}>{formatDateTime(provenance.retrievedAt, locale)}</time>
+              </HealthRow>
+            )}
+          </dl>
         )}
       </section>
 
@@ -108,43 +122,24 @@ export default function GlobalOverview({
       </label>
 
       <div className="grid grid-cols-2 gap-3">
-        <MetricCard
-          label={t.overview.metricFoci}
-          value={feedSnapshot ? formatThousands(totalFoci) : "—"}
-          tone="neutral"
-        />
+        <MetricCard label={t.overview.metricFoci} value={feedSnapshot ? formatThousands(detections.length) : "—"} tone="neutral" />
         <MetricCard
           label={t.overview.metricMaxFrp}
-          value={metrics ? `${formatMegawatts(metrics.maxFrpMw, locale)} MW` : "—"}
+          value={metrics ? `${formatDecimal(metrics.maxFrpMw, locale)} MW` : "—"}
           tone="critical"
         />
         <MetricCard
           label={t.overview.metricAverageFrp}
-          value={metrics ? `${formatMegawatts(metrics.averageFrpMw, locale)} MW` : "—"}
+          value={metrics ? `${formatDecimal(metrics.averageFrpMw, locale)} MW` : "—"}
           tone="neutral"
         />
         <MetricCard
-          label={t.overview.metricProjectedBurnArea}
-          badge={t.overview.projectionLabel}
-          value={metrics ? `${formatHectares(metrics.projectedBurnAreaHectares, locale)} ha` : "—"}
-          note={t.overview.projectionMethodology}
+          label={t.overview.metricHighConfidence}
+          value={metrics ? formatThousands(metrics.highConfidenceCount) : "—"}
           tone="neutral"
-        />
-        <MetricCard
-          className="col-span-2 sm:col-span-1"
-          label={t.overview.metricLastUpdate}
-          value={lastUpdateText}
-          valueNode={feedSnapshot?.generatedAt && exactTimestamp ? (
-            <time dateTime={feedSnapshot.generatedAt} title={relativeFreshness ?? undefined} className="block">
-              <span className="block text-lg leading-tight">{exactTimestamp}</span>
-              {relativeFreshness && (
-                <span className="mt-1 block text-[11px] font-medium text-foreground/65">{relativeFreshness}</span>
-              )}
-            </time>
-          ) : undefined}
-          tone={freshness === "stale" ? "warning" : freshness === "unavailable" ? "critical" : "neutral"}
         />
       </div>
+      <p className="-mt-1 text-[11px] leading-4 text-foreground/65">{t.overview.sampleNote}</p>
 
       <p className="text-xs text-foreground/65">{t.overview.hint}</p>
 
@@ -153,25 +148,27 @@ export default function GlobalOverview({
           <h3 id="strongest-detections-title" className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65">
             {t.overview.strongestTitle}
           </h3>
-          {strongestEvents.length === 0 ? (
+          {strongest.length === 0 ? (
             <p className="text-xs text-foreground/65">{t.overview.strongestEmpty}</p>
           ) : (
             <ol className="space-y-1.5">
-              {strongestEvents.map((event) => (
-                <li key={event.id}>
+              {strongest.map((detection) => (
+                <li key={detection.id}>
                   <button
                     type="button"
-                    onClick={() => onSelectEvent(event)}
+                    onClick={() => onSelectDetection(detection)}
                     className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-border/60 bg-surface/75 px-3 py-2 text-left transition-colors hover:border-foreground/25 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-xs font-medium text-foreground">{formatPlace(event)}</span>
-                      <time dateTime={event.satelliteDetection?.detectedAt ?? event.lastUpdated} className="mt-0.5 block font-mono text-[11px] tabular-nums text-foreground/65">
-                        {formatCoordinates(event)} · {formatDetectionTime(event.satelliteDetection?.detectedAt ?? event.lastUpdated, locale)}
+                      <span className="block truncate text-xs font-medium text-foreground">
+                        {detection.country ?? formatCoordinates(detection)}
+                      </span>
+                      <time dateTime={detection.acquiredAt} className="mt-0.5 block font-mono text-[11px] tabular-nums text-foreground/65">
+                        {formatCoordinates(detection)} · {formatShortUtcTime(detection.acquiredAt, locale)}
                       </time>
                     </span>
                     <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-foreground">
-                      {formatMegawatts(resolveEventIntensityMw(event) ?? 0, locale)} MW
+                      {formatDecimal(detection.frpMw, locale)} MW
                     </span>
                   </button>
                 </li>
@@ -186,125 +183,66 @@ export default function GlobalOverview({
   );
 }
 
-function formatCoordinates(event: WildfireEvent): string {
-  return `${event.location.lat.toFixed(2)}, ${event.location.lng.toFixed(2)}`;
+function healthMessage(health: FeedHealthAssessment, labels: Dictionary["overview"], locale: Locale): string | null {
+  const time = (iso: string | null) => (iso ? formatDateTime(iso, locale) : "—");
+  if (health.state === "degraded") {
+    return interpolate(labels.degradedDetail, { time: time(health.snapshotGeneratedAt) });
+  }
+  if (health.state !== "stale") return null;
+  const parts = [interpolate(labels.staleDetail, { time: time(health.snapshotGeneratedAt) })];
+  if (health.ingest === "failing" || health.ingest === "degraded") {
+    parts.push(interpolate(labels.staleFailingDetail, { time: time(health.lastSuccessAt ?? health.snapshotGeneratedAt) }));
+  } else if (health.ingest === "stalled") {
+    parts.push(interpolate(labels.staleStalledDetail, { time: time(health.lastAttemptAt) }));
+  }
+  return parts.join(" ");
 }
 
-/** Country-level names come from Natural Earth; coordinates tell apart several
- * hotspots in the same country and stand in for unmatched (offshore) points. */
-function formatPlace(event: WildfireEvent): string {
-  if (!event.country || event.country.includes("unmatched")) return formatCoordinates(event);
-  return event.region && event.region !== event.country ? `${event.region}, ${event.country}` : event.country;
-}
-
-function formatDetectionTime(iso: string, locale: "en" | "pt"): string {
-  const parsed = Date.parse(iso);
-  if (!Number.isFinite(parsed)) return "—";
-  return new Intl.DateTimeFormat(locale === "pt" ? "pt-PT" : "en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "UTC",
-    timeZoneName: "short",
-  }).format(new Date(parsed));
-}
-
-type OverviewLabels = {
-  freshnessLoading: string;
-  freshnessCurrent: string;
-  freshnessStale: string;
-  freshnessUnavailable: string;
-  freshnessUpdated: string;
-  staleLastKnown: string;
-};
-
-function getFeedFreshness(
-  snapshot: WildfireFeedSnapshot | null,
-  state: FeedLoadStatus,
-  now: number | null,
-): FeedFreshness | "loading" {
-  if (state === "loading" && !snapshot) return "loading";
-  if (state === "error") return snapshot ? "stale" : "unavailable";
-  if (!snapshot?.generatedAt) return "unavailable";
-  const generatedAt = Date.parse(snapshot.generatedAt);
-  if (!Number.isFinite(generatedAt)) return "unavailable";
-  const age = Math.max(0, (now ?? generatedAt) - generatedAt);
-  return age > FEED_STALE_AFTER_MS ? "stale" : "current";
-}
-
-function formatRelativeFreshness(generatedAt: string, now: number, locale: "en" | "pt", prefix: string): string {
-  const elapsedMinutes = Math.max(0, Math.floor((now - Date.parse(generatedAt)) / 60_000));
-  const formatter = new Intl.RelativeTimeFormat(locale === "pt" ? "pt-PT" : "en-GB", { numeric: "always" });
-  return `${prefix} ${formatter.format(-elapsedMinutes, "minute")}`;
-}
-
-function FreshnessBadge({ freshness, labels }: { freshness: FeedFreshness | "loading"; labels: OverviewLabels }) {
-  const label = freshness === "loading"
-    ? labels.freshnessLoading
-    : freshness === "current"
-      ? labels.freshnessCurrent
-      : freshness === "stale"
-        ? labels.freshnessStale
-        : labels.freshnessUnavailable;
-  const tone = freshness === "stale"
-    ? "text-amber-700 dark:text-amber-200"
-    : freshness === "unavailable"
-      ? "text-red-700 dark:text-red-200"
-      : "text-foreground/70";
+function HealthBadge({ state, labels }: { state: FeedHealthAssessment["state"]; labels: Dictionary["overview"] }) {
+  const label = {
+    loading: labels.healthLoading,
+    healthy: labels.healthHealthy,
+    degraded: labels.healthDegraded,
+    stale: labels.healthStale,
+    unavailable: labels.healthUnavailable,
+  }[state];
+  const warning = state === "degraded" || state === "stale";
+  const tone = warning ? "text-amber-700 dark:text-amber-200" : state === "unavailable" ? "text-red-700 dark:text-red-200" : "text-foreground/70";
+  const dot = warning ? "bg-amber-400" : state === "unavailable" ? "bg-red-400" : "bg-foreground/50";
 
   return (
-    <span aria-live="polite" className={`inline-flex max-w-[10rem] shrink-0 items-center gap-1.5 text-right font-mono text-[11px] font-semibold uppercase tabular-nums tracking-[0.07em] ${tone}`}>
-      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${freshness === "stale" ? "bg-amber-400" : freshness === "unavailable" ? "bg-red-400" : "bg-foreground/50"}`} />
+    <span
+      aria-live="polite"
+      data-testid="feed-health-badge"
+      data-state={state}
+      className={`inline-flex max-w-[10rem] shrink-0 items-center gap-1.5 text-right font-mono text-[11px] font-semibold uppercase tabular-nums tracking-[0.07em] ${tone}`}
+    >
+      <span aria-hidden="true" className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
       {label}
     </span>
   );
 }
 
-function MetricCard({
-  badge,
-  className,
-  label,
-  note,
-  value,
-  valueNode,
-  tone,
-}: {
-  badge?: string;
-  className?: string;
-  label: string;
-  note?: string;
-  value: string;
-  valueNode?: ReactNode;
-  tone: "neutral" | "critical" | "warning";
-}) {
+function HealthRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className={`rounded-lg border border-border/60 bg-surface/75 p-4 shadow-lg backdrop-blur-xl ${className ?? ""}`}>
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-1">
-        <p className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-wide text-foreground/65">{label}</p>
-        {badge && <span className="inline-flex max-w-full min-w-0 shrink items-center justify-center whitespace-normal break-words rounded-full bg-amber-500/12 px-1.5 py-1 text-center font-mono text-[11px] font-semibold leading-tight tabular-nums tracking-[0.08em] text-amber-700 dark:text-amber-300 sm:shrink-0 sm:px-2">{badge}</span>}
-      </div>
-      <p
-        className={`mt-1 font-mono text-2xl font-semibold tabular-nums ${
-          tone === "critical" ? "text-rose-500" : tone === "warning" ? "text-amber-700 dark:text-amber-400" : "text-foreground"
-        }`}
-      >
-        {valueNode ?? value}
-      </p>
-      {note && <p className="mt-2 text-[11px] leading-4 text-foreground/65">{note}</p>}
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/65">{label}</dt>
+      <dd className="font-mono text-[11px] tabular-nums text-foreground/80">{children}</dd>
     </div>
   );
 }
 
-function formatMegawatts(value: number, locale: "en" | "pt"): string {
-  return new Intl.NumberFormat(locale === "pt" ? "pt-PT" : "en-GB", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(value);
+function MetricCard({ label, value, tone }: { label: string; value: string; tone: "neutral" | "critical" }) {
+  return (
+    <div className="rounded-lg border border-border/60 bg-surface/75 p-4 shadow-lg backdrop-blur-xl">
+      <p className="text-xs font-semibold uppercase tracking-wide text-foreground/65">{label}</p>
+      <p className={`mt-1 font-mono text-2xl font-semibold tabular-nums ${tone === "critical" ? "text-rose-500" : "text-foreground"}`}>
+        {value}
+      </p>
+    </div>
+  );
 }
 
-function formatHectares(value: number, locale: "en" | "pt"): string {
-  return new Intl.NumberFormat(locale === "pt" ? "pt-PT" : "en-GB", {
-    maximumFractionDigits: 1,
-  }).format(value);
+function formatCoordinates(detection: ThermalDetection): string {
+  return `${detection.location.lat.toFixed(2)}, ${detection.location.lng.toFixed(2)}`;
 }

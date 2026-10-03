@@ -3,16 +3,16 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { CloudRain, Compass, Droplets, ExternalLink, Gauge, LoaderCircle, Newspaper, RotateCw, Thermometer, Wind } from "lucide-react";
-import type { FireWeather } from "@/lib/wildfire/types";
+import type { ModelledWeather } from "@/lib/weather/open-meteo";
+import { formatDateTime, formatDecimal, formatUtcDateTime } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
 interface FireTelemetryDashboardProps {
   coordinates: { lat: number; lng: number };
-  weather: FireWeather | null;
+  weather: ModelledWeather | null;
   locationName: string | null;
-  region: string;
-  country: string;
-  startedAt: string;
+  /** Inferred from coordinates; null outside any land boundary or across several countries. */
+  country: string | null;
   selectionId: string;
   weatherFailed: boolean;
 }
@@ -50,7 +50,7 @@ interface AirQualityResponse {
   availability?: "available" | "no-nearby-monitor" | "unconfigured" | "upstream-error";
 }
 
-export default function FireTelemetryDashboard({ coordinates, weather, weatherFailed, locationName, region, country, startedAt, selectionId }: FireTelemetryDashboardProps) {
+export default function FireTelemetryDashboard({ coordinates, weather, weatherFailed, locationName, country, selectionId }: FireTelemetryDashboardProps) {
   const { locale, t } = useLocale();
   const [newsResult, setNewsResult] = useState<NewsResult | null>(null);
   const [isFetchingAQI, setIsFetchingAQI] = useState(true);
@@ -58,7 +58,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
   const [aqiError, setAqiError] = useState<AqiError | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const [airQualityRetryNonce, setAirQualityRetryNonce] = useState(0);
-  const requestKey = `${selectionId}:${locale}:${locationName ?? "pending"}:${region}:${country}:${startedAt}:${retryNonce}`;
+  const requestKey = `${selectionId}:${locale}:${locationName ?? "pending"}:${country ?? ""}:${retryNonce}`;
   const hasCurrentResult = newsResult?.key === requestKey;
   const articles = hasCurrentResult ? newsResult.articles : [];
   const newsFailed = hasCurrentResult ? newsResult.failed : false;
@@ -68,13 +68,8 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
     if (!locationName) return;
 
     const controller = new AbortController();
-    const params = new URLSearchParams({
-      location: locationName,
-      region,
-      country,
-      startedAt,
-      locale,
-    });
+    const params = new URLSearchParams({ location: locationName, locale });
+    if (country) params.set("country", country);
 
     fetch(`/api/news?${params}`, { signal: controller.signal })
       .then(async (response) => {
@@ -93,7 +88,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
       });
 
     return () => controller.abort();
-  }, [country, locale, locationName, region, requestKey, startedAt]);
+  }, [country, locale, locationName, requestKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -178,16 +173,16 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
 
       {weather ? (
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-border/45">
-          <WeatherStat icon={<Thermometer aria-hidden="true" />} label={t.fireDetail.temperatureLabel} value={`${weather.temperatureC.toFixed(1)}°C`} />
-          <WeatherStat icon={<Wind aria-hidden="true" />} label={t.fireDetail.windSpeedLabel} value={`${weather.windSpeedKmh.toFixed(1)} km/h`} />
+          <WeatherStat icon={<Thermometer aria-hidden="true" />} label={t.fireDetail.temperatureLabel} value={`${formatDecimal(weather.temperatureC, locale)} °C`} />
+          <WeatherStat icon={<Wind aria-hidden="true" />} label={t.fireDetail.windSpeedLabel} value={`${formatDecimal(weather.windSpeedKmh, locale)} km/h`} />
           <WeatherStat icon={<Compass aria-hidden="true" />} label={t.fireDetail.windDirectionLabel} value={`${Math.round(weather.windDirectionDeg)}°`} />
-          <WeatherStat icon={<Gauge aria-hidden="true" />} label={t.fireDetail.windGustLabel} value={`${weather.windGustKmh.toFixed(1)} km/h`} />
+          <WeatherStat icon={<Gauge aria-hidden="true" />} label={t.fireDetail.windGustLabel} value={`${formatDecimal(weather.windGustKmh, locale)} km/h`} />
           <WeatherStat icon={<Droplets aria-hidden="true" />} label={t.fireDetail.humidityLabel} value={`${Math.round(weather.relativeHumidityPct)}%`} />
           <WeatherStat
             icon={<CloudRain aria-hidden="true" />}
             label={t.fireDetail.precipitationProbabilityLabel}
             value={`${Math.round(weather.precipitationProbabilityPct)}%`}
-            detail={`${weather.precipitationMm.toFixed(1)} mm`}
+            detail={`${formatDecimal(weather.precipitationMm, locale)} mm`}
           />
         </dl>
       ) : (
@@ -196,7 +191,11 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
         </div>
       )}
 
-      <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/65">
+      <p className="mt-2.5 text-[11px] leading-4 text-foreground/65">
+        {t.fireDetail.weatherModelNote}
+        {weather && <> · {t.fireDetail.weatherValidAtLabel} <time dateTime={weather.validAt} className="font-mono tabular-nums">{formatUtcDateTime(weather.validAt, locale)} UTC</time></>}
+      </p>
+      <p className="mt-1.5 text-[11px] uppercase tracking-[0.08em] text-foreground/65">
         <a href="https://open-meteo.com/" rel="noopener noreferrer" target="_blank" className="underline underline-offset-2 transition-colors hover:text-foreground">
           {t.fireDetail.openMeteoSource}
         </a>
@@ -226,10 +225,7 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
             </button>
           </div>
         ) : articles.length === 0 ? (
-          <div>
-            <NewsMessage>{t.fireDetail.newsEmpty}</NewsMessage>
-            <p className="mt-2 text-[11px] leading-4 text-foreground/65">{t.fireDetail.newsCoverageSinceDetection}</p>
-          </div>
+          <NewsMessage>{t.fireDetail.newsEmpty}</NewsMessage>
         ) : (
           <ul className="space-y-2">
             {articles.map((article) => (
@@ -251,7 +247,8 @@ export default function FireTelemetryDashboard({ coordinates, weather, weatherFa
             ))}
           </ul>
         )}
-        <p className="mt-2.5 text-[11px] uppercase tracking-[0.08em] text-foreground/65">{t.fireDetail.newsSource}</p>
+        <p className="mt-2.5 text-[11px] leading-4 text-foreground/65">{t.fireDetail.newsSearchNote}</p>
+        <p className="mt-1.5 text-[11px] uppercase tracking-[0.08em] text-foreground/65">{t.fireDetail.newsSource}</p>
       </section>
     </div>
   );
@@ -359,7 +356,7 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
       <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-neutral-200 pt-3 text-xs dark:border-neutral-800">
         <div>
           <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/65">PM2.5</dt>
-          <dd className="mt-1 font-mono font-semibold tabular-nums text-foreground">{reading.pm25.toFixed(1)} {reading.unit}</dd>
+          <dd className="mt-1 font-mono font-semibold tabular-nums text-foreground">{formatDecimal(reading.pm25, locale)} {reading.unit}</dd>
         </div>
         <div>
           <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-foreground/65">{t.fireDetail.airQualityStationLabel}</dt>
@@ -367,7 +364,7 @@ function AirQualityReadingCard({ reading }: { reading: AirQualityReading }) {
         </div>
       </dl>
       <p className="mt-3 font-mono text-[11px] tabular-nums text-foreground/65">
-        {reading.distanceKm === null ? t.fireDetail.airQualityDistanceUnknown : `${reading.distanceKm.toFixed(1)} km`} · {new Date(reading.observedAt).toLocaleString(locale === "pt" ? "pt-PT" : "en-GB")}
+        {reading.distanceKm === null ? t.fireDetail.airQualityDistanceUnknown : `${formatDecimal(reading.distanceKm, locale)} km`} · {formatDateTime(reading.observedAt, locale)}
       </p>
     </div>
   );
@@ -384,10 +381,11 @@ function NewsMessage({ children }: { children: ReactNode }) {
 function WeatherStat({ detail, icon, label, value }: { detail?: string; icon: ReactNode; label: string; value: string }) {
   return (
     <div className="min-h-24 bg-surface/90 p-2.5">
-      <div className="flex items-center gap-1.5 text-foreground/65 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:stroke-[1.7]">
+      {/* The icon sits inside <dt>: a <dl> group may only contain dt and dd elements. */}
+      <dt className="flex items-center gap-1.5 text-[11px] font-semibold uppercase leading-tight tracking-[0.06em] text-foreground/65 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0 [&_svg]:stroke-[1.7]">
         {icon}
-        <dt className="text-[11px] font-semibold uppercase leading-tight tracking-[0.06em]">{label}</dt>
-      </div>
+        <span>{label}</span>
+      </dt>
       <dd className="mt-2 font-mono text-sm font-semibold tabular-nums text-foreground">
         {value}
         {detail && <span className="ml-1.5 text-[11px] font-normal text-foreground/65">{detail}</span>}

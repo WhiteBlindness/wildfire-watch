@@ -100,7 +100,7 @@ test("names toggles by the state they switch on and keeps visible text in the na
 
 test("offers a keyboard route to individual detections without the map canvas", () => {
   const overview = readProjectFile("src/components/panel/GlobalOverview.tsx");
-  assert.match(overview, /onSelectEvent/);
+  assert.match(overview, /onSelectDetection/);
   assert.match(overview, /<button\b/);
 });
 
@@ -129,4 +129,22 @@ test("sets no cookies and loads no tracking or advertising scripts", () => {
   for (const path of sourceFiles) {
     assert.doesNotMatch(readProjectFile(path), forbidden, `${relative(projectRoot, join(projectRoot, path))} adds tracking or cookies`);
   }
+});
+
+test("keeps satellite heat detections apart from fire severity and operational status", () => {
+  const types = readProjectFile("src/lib/wildfire/types.ts");
+  assert.doesNotMatch(types, /\bseverity\??:|FireSeverity/i, "FRP bands must not be modelled as severity");
+  assert.match(types, /operationalStatus: OperationalStatus/);
+
+  for (const dictionary of ["src/lib/i18n/pt.ts", "src/lib/i18n/en.ts"]) {
+    assert.doesNotMatch(readProjectFile(dictionary), /severity|severidade|gravidade/i, `${dictionary} grades detections as fire severity`);
+  }
+
+  const selection = readProjectFile("src/lib/wildfire/selection.ts");
+  assert.doesNotMatch(selection, /operationalStatus: "(?:active|contained|extinguished)"/, "satellite selections must stay unknown");
+
+  const panel = readProjectFile("src/components/panel/FireDetailsPanel.tsx");
+  assert.match(panel, /t\.operationalStatus\[selection\.operationalStatus\]/);
+  assert.match(panel, /t\.fireDetail\.operationalUnknownNote/);
+  assert.match(panel, /<BasisTag basis="estimated" \/>/, "the burned-area figure must be labelled as an estimate");
 });

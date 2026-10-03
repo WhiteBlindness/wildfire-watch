@@ -48,7 +48,7 @@ test("documents JetBrains Mono as the authoritative operational data face", () =
 test("uses monospaced tabular numerals for overview and fire-detail readouts", () => {
   assert.match(overview, /mt-1 font-mono text-2xl font-semibold tabular-nums/);
   assert.match(overview, /aria-live="polite"[\s\S]*?font-mono[\s\S]*?tabular-nums/);
-  assert.match(overview, /\{badge && <span className="[^"]*font-mono[^"]*tabular-nums[^"]*"/);
+  assert.match(fireDetails, /function BasisTag[\s\S]*?className="[^"]*font-mono/);
   assert.match(fireDetails, /<dd className="[^"]*font-mono[^"]*tabular-nums[^"]*"/);
   assert.match(fireDetails, /formatUtcDateTime[\s\S]*?font-mono[^"]*tabular-nums/);
 });
@@ -62,5 +62,5 @@ test("uses the data face for weather, air-quality, news-time, and timeline telem
   assert.match(timeline, /<output className="[^"]*font-mono[^"]*tabular-nums/);
   assert.match(timeline, /aria-hidden="true" className="[^"]*font-mono[^"]*tabular-nums/);
   assert.match(timeline, /<span className="font-mono tabular-nums">\{currentLabel\}<\/span>/);
-  assert.match(legend, /<li key=\{severity\} className="[^"]*font-mono[^"]*"/);
+  assert.match(legend, /<li key=\{band\} className="[^"]*font-mono[^"]*"/);
 });

@@ -19,15 +19,12 @@ export interface NewsQueryInput {
   location?: string | null;
   region?: string | null;
   country?: string | null;
-  startedAt?: string | null;
-  /** @deprecated Use startedAt for provider query inputs. */
-  publishedAfter?: string | null;
 }
 
 export const DEFAULT_NEWS_LIMIT = 3;
 export const DEFAULT_RSS_SCAN_LIMIT = 100;
-export const NEWS_LOOKBACK_HOURS = 48;
-const NEWS_LOOKBACK_MS = NEWS_LOOKBACK_HOURS * 60 * 60 * 1000;
+/** Articles older than this are never shown as "latest news", whichever query tier found them. */
+export const NEWS_MAX_AGE_DAYS = 30;
 export const FIRE_NEWS_QUERY = "(wildfire OR fire)";
 const FIRE_KEYWORD_PATTERN = /\b(?:wildfires?|fires?|incendios?|incêndios?)\b/i;
 const NAMED_ENTITIES: Record<string, string> = {
@@ -39,13 +36,9 @@ const NAMED_ENTITIES: Record<string, string> = {
   quot: '"',
 };
 
-export function getEffectiveNewsCutoff(startedAt: string | null | undefined): string | null {
-  if (!startedAt) return null;
-  const startedAtMs = Date.parse(startedAt);
-  if (!Number.isFinite(startedAtMs)) return null;
-
-  const effectiveCutoff = new Date(startedAtMs - NEWS_LOOKBACK_MS);
-  return Number.isNaN(effectiveCutoff.getTime()) ? null : effectiveCutoff.toISOString();
+/** Oldest publication time accepted for a lookup made at `nowMs`. */
+export function newsCutoff(nowMs: number): string {
+  return new Date(nowMs - NEWS_MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
 }
 
 export function decodeXml(value: string): string {
@@ -226,7 +219,7 @@ export function buildGoogleNewsQueries(input: NewsQueryInput): [string, string, 
       FIRE_NEWS_QUERY,
       "when:7d",
     ]),
-    joinQuery([quoteGeographyTerm(nationalScope), FIRE_NEWS_QUERY]),
+    joinQuery([quoteGeographyTerm(nationalScope), FIRE_NEWS_QUERY, `when:${NEWS_MAX_AGE_DAYS}d`]),
   ];
 }
 

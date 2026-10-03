@@ -2,35 +2,35 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import type { FeedLoadStatus, FireSelection, WildfireEvent, WildfireFeedSnapshot } from "@/lib/wildfire/types";
+import type { DetectionFeedSnapshot, DetectionSelection, FeedLoadStatus, ThermalDetection } from "@/lib/wildfire/types";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireDetailsPanel from "./FireDetailsPanel";
 import GlobalOverview from "./GlobalOverview";
 
 interface SidePanelProps {
-  events: WildfireEvent[];
-  selectedFire: FireSelection | null;
+  detections: ThermalDetection[];
+  selection: DetectionSelection | null;
   isMinimized: boolean;
   onClose: () => void;
   onToggleMinimized: () => void;
   countries: string[];
   selectedCountry: string;
   onCountryChange: (country: string) => void;
-  onSelectEvent: (event: WildfireEvent) => void;
-  feedSnapshot: WildfireFeedSnapshot | null;
+  onSelectDetection: (detection: ThermalDetection) => void;
+  feedSnapshot: DetectionFeedSnapshot | null;
   feedState: FeedLoadStatus;
 }
 
 export default function SidePanel({
-  events,
-  selectedFire,
+  detections,
+  selection,
   isMinimized,
   onClose,
   onToggleMinimized,
   countries,
   selectedCountry,
   onCountryChange,
-  onSelectEvent,
+  onSelectDetection,
   feedSnapshot,
   feedState,
 }: SidePanelProps) {
@@ -46,7 +46,7 @@ export default function SidePanel({
   // Always docked — "Mission Control" reads as a permanent instrument, not a
   // modal that appears/disappears. Only the content and the mobile sheet's
   // height change between the global dashboard and a single fire's detail.
-  const detailOpen = selectedFire !== null;
+  const detailOpen = selection !== null;
 
   return (
     <aside
@@ -75,16 +75,16 @@ export default function SidePanel({
       {/* tabIndex -1: the skip link can move focus here, and keyboard users can
           scroll the panel without first tabbing to a control inside it. */}
       <div id="mission-control-panel-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-smooth">
-        <div key={selectedFire?.id ?? "overview"} className="min-h-full motion-safe:animate-[panel-content-enter_280ms_ease-out_both]">
-          {isDesktop || !isMinimized ? selectedFire ? (
-            <FireDetailsPanel selection={selectedFire} onClose={onClose} />
+        <div key={selection?.id ?? "overview"} className="min-h-full motion-safe:animate-[panel-content-enter_280ms_ease-out_both]">
+          {isDesktop || !isMinimized ? selection ? (
+            <FireDetailsPanel selection={selection} provenance={feedSnapshot?.provenance ?? null} onClose={onClose} />
           ) : (
             <GlobalOverview
-              events={events}
+              detections={detections}
               countries={countries}
               selectedCountry={selectedCountry}
               onCountryChange={onCountryChange}
-              onSelectEvent={onSelectEvent}
+              onSelectDetection={onSelectDetection}
               feedSnapshot={feedSnapshot}
               feedState={feedState}
             />

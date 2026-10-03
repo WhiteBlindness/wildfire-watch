@@ -6,6 +6,26 @@ export const VECTOR_STYLE_URL = {
   light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
 } as const;
 
+/**
+ * CARTO requires an API key on basemap requests (free for non-commercial use).
+ * When one is configured at build time it is added to every CARTO style, tile,
+ * glyph and sprite URL; other hosts are left untouched. The key is public by
+ * design: it travels in browser requests and CARTO limits it by usage.
+ */
+export function withCartoKey(url: string, key: string | undefined): string {
+  if (!key) return url;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  const isCarto = parsed.hostname === "basemaps.cartocdn.com" || parsed.hostname.endsWith(".basemaps.cartocdn.com");
+  if (!isCarto || parsed.protocol !== "https:" || parsed.searchParams.has("key")) return url;
+  parsed.searchParams.set("key", key);
+  return parsed.toString();
+}
+
 // Satellite mode always uses dark-matter labels regardless of theme: white
 // labels and boundary lines over imagery match Google Earth's convention and
 // remain legible on both bright and shadowed terrain. The choice is visual,

@@ -1,92 +1,60 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { WildfireEvent } from "./types";
-import { calculateOverviewMetrics, resolveEventIntensityMw, selectStrongestEvents } from "./overview-metrics";
+import type { DetectionConfidence, ThermalDetection } from "./types";
+import { calculateOverviewMetrics, selectStrongestDetections } from "./overview-metrics";
 
-function event(
-  id: string,
-  country: string,
-  satelliteFrpMw: number | null,
-  maxFrpMw: number | null,
-): WildfireEvent {
+function detection(id: string, frpMw: number, confidence: DetectionConfidence = "nominal"): ThermalDetection {
   return {
+    kind: "satellite_thermal_detection",
     id,
-    name: id,
-    country,
-    region: "Test region",
+    datasetId: "nasa-firms:viirs-snpp-nrt",
     location: { lng: -9, lat: 39 },
-    status: "active",
-    severity: "moderate",
-    startedAt: "2026-08-01T00:00:00.000Z",
-    estimatedContainmentAt: null,
-    containedAt: null,
-    areaHectares: 0,
-    polygon: null,
-    heatmapPoints: [],
-    wind: null,
-    forces: null,
-    internationalAid: null,
-    evolution: null,
-    maxFrpMw,
-    satelliteDetection: satelliteFrpMw === null
-      ? null
-      : { frpMw: satelliteFrpMw, confidencePct: 90, detectedAt: "2026-08-01T00:00:00.000Z" },
-    source: "firms",
-    lastUpdated: "2026-08-01T00:00:00.000Z",
+    acquiredAt: "2026-08-01T00:00:00.000Z",
+    frpMw,
+    confidence,
+    pixelKm: null,
+    intensityBand: "low",
+    country: "Portugal",
   };
 }
 
-test("prefers valid point FRP and falls back to the event peak", () => {
-  const point = event("point", "Portugal", 12, 90);
-  const cluster = event("cluster", "Portugal", null, 8);
-
-  assert.equal(resolveEventIntensityMw(point), 12);
-  assert.equal(resolveEventIntensityMw(cluster), 8);
-  assert.deepEqual(calculateOverviewMetrics([point, cluster]), {
+test("summarises measured FRP and source-reported confidence", () => {
+  assert.deepEqual(calculateOverviewMetrics([detection("a", 12, "high"), detection("b", 8, "low")]), {
     totalFrpMw: 20,
     maxFrpMw: 12,
     averageFrpMw: 10,
-    projectedBurnAreaHectares: 8,
     validIntensityCount: 2,
+    highConfidenceCount: 1,
   });
 });
 
-test("excludes missing, non-finite, and negative intensity values", () => {
-  const invalidPoint = event("invalid-point", "Portugal", Number.NaN, -4);
-  const validFallback = event("valid-fallback", "Portugal", -1, 5);
-  const validPoint = event("valid-point", "Portugal", 0, 100);
-
-  assert.equal(resolveEventIntensityMw(invalidPoint), null);
-  assert.equal(resolveEventIntensityMw(validFallback), 5);
-  assert.deepEqual(calculateOverviewMetrics([invalidPoint, validFallback, validPoint]), {
+test("excludes non-finite and negative FRP from the totals", () => {
+  const metrics = calculateOverviewMetrics([
+    detection("nan", Number.NaN, "high"),
+    detection("negative", -4),
+    detection("zero", 0),
+    detection("five", 5, "high"),
+  ]);
+  assert.deepEqual(metrics, {
     totalFrpMw: 5,
     maxFrpMw: 5,
     averageFrpMw: 2.5,
-    projectedBurnAreaHectares: 2,
     validIntensityCount: 2,
+    highConfidenceCount: 2,
   });
 });
 
-test("returns null when no valid intensity is available and supports country subsets", () => {
+test("returns null when no detection has a valid FRP", () => {
   assert.equal(calculateOverviewMetrics([]), null);
-  assert.equal(calculateOverviewMetrics([event("invalid", "Portugal", null, null)]), null);
-
-  const portugal = event("pt", "Portugal", 20, null);
-  const spain = event("es", "Spain", 40, null);
-  assert.equal(calculateOverviewMetrics([portugal])?.totalFrpMw, 20);
-  assert.equal(calculateOverviewMetrics([spain])?.projectedBurnAreaHectares, 16);
+  assert.equal(calculateOverviewMetrics([detection("invalid", Number.NaN)]), null);
 });
 
-test("lists the strongest detections first and skips events without a valid intensity", () => {
-  const weak = event("weak", "Portugal", 3, null);
-  const strong = event("strong", "Spain", 250, null);
-  const middle = event("middle", "Portugal", 40, null);
-  const unknown = event("unknown", "Portugal", null, null);
-  const input = [weak, unknown, strong, middle];
+test("lists the strongest detections first without reordering the input", () => {
+  const input = [detection("weak", 3), detection("invalid", Number.NaN), detection("strong", 250), detection("middle", 40)];
 
-  assert.deepEqual(selectStrongestEvents(input, 2).map((item) => item.id), ["strong", "middle"]);
-  assert.deepEqual(selectStrongestEvents(input, 10).map((item) => item.id), ["strong", "middle", "weak"]);
-  assert.deepEqual(input.map((item) => item.id), ["weak", "unknown", "strong", "middle"], "input order must not change");
-  assert.deepEqual(selectStrongestEvents([], 5), []);
-  assert.deepEqual(selectStrongestEvents(input, 0), []);
+  assert.deepEqual(selectStrongestDetections(input, 2).map((item) => item.id), ["strong", "middle"]);
+  assert.deepEqual(selectStrongestDetections(input, 10).map((item) => item.id), ["strong", "middle", "weak"]);
+  assert.deepEqual(input.map((item) => item.id), ["weak", "invalid", "strong", "middle"], "input order must not change");
+  assert.deepEqual(selectStrongestDetections([], 5), []);
+  assert.deepEqual(selectStrongestDetections(input, 0), []);
 });

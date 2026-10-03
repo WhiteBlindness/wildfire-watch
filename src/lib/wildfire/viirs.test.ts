@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { bbox, bboxPolygon, buffer, distance, point } from "@turf/turf";
 import type { CachedFirmsPoint } from "./firms-cache";
-import type { WildfireEvent } from "./types";
-import { VIIRS_PIXEL_SIDE_METERS, eventsToViirsPixelGeoJSON, pointsToViirsPixelGeoJSON } from "./viirs";
+import { thermalDetection } from "./detection.fixture";
+import { VIIRS_PIXEL_SIDE_METERS, detectionsToFootprintSources, pointsToViirsPixelGeoJSON } from "./viirs";
 
 // Re-implement the grid snap helper for test assertions.  It mirrors the logic
 // in viirs.ts so tests stay honest about what the snapped centre actually is.
@@ -18,222 +18,84 @@ function testSnapToGrid(lat: number, lng: number): { cellCentLat: number; cellCe
   return { cellCentLat, cellCentLng };
 }
 
-function makeEvent(overrides: Partial<WildfireEvent> = {}): WildfireEvent {
+/** Width and height in metres of a footprint, unwrapping a split across the antimeridian. */
+function footprintSizeMeters(geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon): { width: number; height: number } {
+  const rings = geometry.type === "Polygon" ? [geometry.coordinates[0]] : geometry.coordinates.map((polygon) => polygon[0]);
+  const positions = rings.flat();
+  const hasEast = positions.some(([lng]) => lng > 90);
+  const unwrapped = positions.map(([lng, lat]) => [hasEast && lng < -90 ? lng + 360 : lng, lat] as const);
+  const longitudes = unwrapped.map(([lng]) => lng);
+  const latitudes = unwrapped.map(([, lat]) => lat);
+  const west = Math.min(...longitudes);
+  const east = Math.max(...longitudes);
+  const south = Math.min(...latitudes);
+  const north = Math.max(...latitudes);
   return {
-    id: "fire-1",
-    name: "Thermal anomaly",
-    country: "Portugal",
-    region: "Centro",
-    location: { lng: -8.6, lat: 40.2 },
-    status: "active",
-    severity: "high",
-    startedAt: "2026-08-01T00:00:00.000Z",
-    estimatedContainmentAt: null,
-    containedAt: null,
-    areaHectares: 0,
-    polygon: null,
-    heatmapPoints: [{
-      lng: -8.6,
-      lat: 40.2,
-      intensity: 0.5,
-      detectedAt: "2026-08-01T00:00:00.000Z",
-    }],
-    wind: null,
-    forces: null,
-    internationalAid: null,
-    evolution: null,
-    maxFrpMw: 25,
-    satelliteDetection: {
-      frpMw: 25,
-      confidencePct: 90,
-      detectedAt: "2026-08-01T00:00:00.000Z",
-    },
-    source: "firms",
-    lastUpdated: "2026-08-01T00:00:00.000Z",
-    ...overrides,
+    width: distance(point([west, south]), point([east, south]), { units: "meters" }),
+    height: distance(point([west, south]), point([west, north]), { units: "meters" }),
   };
 }
 
-test("creates one 375 m square for every raw selected hotspot", () => {
-  const event = makeEvent({
-    heatmapPoints: [
-      { lng: -8.6, lat: 40.2, intensity: 0.5, detectedAt: "2026-08-01T00:00:00.000Z" },
-      { lng: -8.59, lat: 40.2, intensity: 0.8, detectedAt: "2026-08-01T00:05:00.000Z" },
-    ],
-  });
+test("detection footprints keep only the selected ids and carry the measured pixel size", () => {
+  const detections = [
+    thermalDetection({ id: "selected", frpMw: 175, pixelKm: { scan: 0.6, track: 0.45 } }),
+    thermalDetection({ id: "other", location: { lng: -8.5, lat: 40.3 } }),
+  ];
 
-  const result = eventsToViirsPixelGeoJSON([event], [event.id]);
-
-  assert.equal(result.features.length, 2);
-  assert.equal(result.features[0].geometry.type, "Polygon");
-  assert.equal(result.features[0].properties?.fireId, event.id);
-  assert.equal(result.features[0].properties?.frp, 25);
-
-  const ring = result.features[0].geometry.type === "Polygon"
-    ? result.features[0].geometry.coordinates[0]
-    : [];
-  assert.equal(ring.length, 5);
-  assert.ok(Math.abs(
-    distance(point(ring[0]), point(ring[1]), { units: "meters" }) - VIIRS_PIXEL_SIDE_METERS,
-  ) < 1);
-  assert.ok(Math.abs(
-    distance(point(ring[1]), point(ring[2]), { units: "meters" }) - VIIRS_PIXEL_SIDE_METERS,
-  ) < 1);
-});
-
-test("matches Turf's exact geodesic buffer, bbox, and bboxPolygon sequence", () => {
-  // eventsToViirsPixelGeoJSON draws nominal-size pixels (no scan/track available
-  // on the HeatmapPoint path) — so the pipeline must be byte-identical to the
-  // original single-buffer sequence: buffer(187.5 m) → bbox → bboxPolygon.
-  const event = makeEvent();
-  const hotspot = event.heatmapPoints[0];
-  const buffered = buffer(point([hotspot.lng, hotspot.lat]), 187.5, { units: "meters" });
-
-  assert.ok(buffered, "Turf should buffer a valid VIIRS hotspot");
-  // For the nominal (square) case, separate scan and track buffers are equal so
-  // their combined bbox is identical to the single-buffer bbox.
-  const expectedSquare = bboxPolygon(bbox(buffered));
-
-  const result = eventsToViirsPixelGeoJSON([event], [event.id]);
-
-  assert.deepEqual(result.features[0]?.geometry, expectedSquare.geometry);
-});
-
-test("keeps a VIIRS footprint physically 375 m square at high latitude", () => {
-  const event = makeEvent({
-    heatmapPoints: [{
-      lng: 12,
-      lat: 80,
-      intensity: 0.5,
-      detectedAt: "2026-08-01T00:00:00.000Z",
-    }],
-  });
-
-  const result = eventsToViirsPixelGeoJSON([event], [event.id]);
-  const geometry = result.features[0]?.geometry;
-  assert.equal(geometry?.type, "Polygon");
-  const ring = geometry?.type === "Polygon" ? geometry.coordinates[0] : [];
-
-  assert.equal(ring.length, 5);
-  for (let index = 0; index < 4; index += 1) {
-    const sideMeters = distance(point(ring[index]), point(ring[index + 1]), { units: "meters" });
-    assert.ok(
-      Math.abs(sideMeters - VIIRS_PIXEL_SIDE_METERS) < 1,
-      `expected side ${index + 1} to be 375 m at 80 degrees latitude, received ${sideMeters} m`,
-    );
-  }
-});
-
-test("keeps VIIRS footprints normalized and 375 m square across the antimeridian", () => {
-  const event = makeEvent({
-    heatmapPoints: [179.999, -179.999, 180, -180].map((lng) => ({
-      lng,
-      lat: 0,
-      intensity: 0.5,
-      detectedAt: "2026-08-01T00:00:00.000Z",
-    })),
-  });
-
-  const result = eventsToViirsPixelGeoJSON([event], [event.id]);
-
-  assert.equal(result.features.length, 4);
-  for (const [featureIndex, feature] of result.features.entries()) {
-    assert.equal(feature.geometry.type, "MultiPolygon");
-    const rings = feature.geometry.type === "MultiPolygon"
-      ? feature.geometry.coordinates.map((polygon) => polygon[0])
-      : [];
-    const centerLng = event.heatmapPoints[featureIndex].lng;
-    const normalizedCenter = centerLng < 0 ? centerLng + 360 : centerLng;
-    const positions = rings.flat();
-    const unwrapped = positions.map(([lng, lat]) => [
-      lng < normalizedCenter - 180 ? lng + 360 : lng,
-      lat,
-    ] as const);
-    const longitudes = unwrapped.map(([lng]) => lng);
-    const latitudes = unwrapped.map(([, lat]) => lat);
-    const west = Math.min(...longitudes);
-    const east = Math.max(...longitudes);
-    const south = Math.min(...latitudes);
-    const north = Math.max(...latitudes);
-
-    assert.ok(positions.every(([lng]) => lng >= -180 && lng <= 180));
-    assert.ok(rings.every((ring) => {
-      const ringLongitudes = ring.map(([lng]) => lng);
-      return Math.max(...ringLongitudes) - Math.min(...ringLongitudes) < 0.01;
-    }), "each antimeridian part must remain local");
-
-    const widthMeters = distance(point([west, south]), point([east, south]), { units: "meters" });
-    const heightMeters = distance(point([west, south]), point([west, north]), { units: "meters" });
-    assert.ok(Math.abs(widthMeters - VIIRS_PIXEL_SIDE_METERS) < 1);
-    assert.ok(Math.abs(heightMeters - VIIRS_PIXEL_SIDE_METERS) < 1);
-  }
-});
-
-test("drops polar coordinates outside MapLibre's representable latitude", () => {
-  const event = makeEvent({
-    heatmapPoints: [
-      { lng: 0, lat: 90, intensity: 0.5, detectedAt: "2026-08-01T00:00:00.000Z" },
-      { lng: 0, lat: -90, intensity: 0.5, detectedAt: "2026-08-01T00:00:00.000Z" },
-    ],
-  });
-
-  assert.deepEqual(eventsToViirsPixelGeoJSON([event], [event.id]), {
-    type: "FeatureCollection",
-    features: [],
-  });
-});
-
-test("filters malformed coordinates and safely derives fallback FRP", () => {
-  const detectedAt = "2026-08-01T00:00:00.000Z";
-  const event = makeEvent({
-    maxFrpMw: null,
-    satelliteDetection: null,
-    heatmapPoints: [
-      { lng: -8.6, lat: 40.2, intensity: 0.5, detectedAt },
-      { lng: -8.61, lat: 40.2, intensity: Number.NaN, detectedAt },
-      { lng: -8.62, lat: 40.2, intensity: -1, detectedAt },
-      { lng: Number.NaN, lat: 40.2, intensity: 1, detectedAt },
-      { lng: 181, lat: 40.2, intensity: 1, detectedAt },
-      { lng: -181, lat: 40.2, intensity: 1, detectedAt },
-      { lng: -8.6, lat: Number.NaN, intensity: 1, detectedAt },
-    ],
-  });
-
-  const result = eventsToViirsPixelGeoJSON([event], [event.id]);
-
-  assert.deepEqual(result.features.map((feature) => feature.properties.frpMw), [100, 0, 0]);
-});
-
-test("isolates selected event ids and keeps each event's FRP on its pixels", () => {
-  const selected = makeEvent({
+  const sources = detectionsToFootprintSources(detections, new Set(["selected"]));
+  assert.deepEqual(sources, [{
     id: "selected",
-    maxFrpMw: 175,
-    satelliteDetection: {
-      frpMw: 175,
-      confidencePct: 94,
-      detectedAt: "2026-08-01T00:00:00.000Z",
-    },
-  });
-  const unselected = makeEvent({ id: "unselected" });
+    lat: 39,
+    lng: -9,
+    frpMw: 175,
+    detectedAt: "2026-08-01T12:00:00.000Z",
+    scanKm: 0.6,
+    trackKm: 0.45,
+  }]);
+  assert.equal(detectionsToFootprintSources(detections).length, 2);
 
-  const result = eventsToViirsPixelGeoJSON([selected, unselected], [selected.id]);
-
-  assert.equal(result.features.length, 1);
-  assert.equal(result.features[0].properties?.fireId, "selected");
-  assert.equal(result.features[0].properties?.frp, 175);
+  const [feature] = pointsToViirsPixelGeoJSON(sources).features;
+  assert.equal(feature.properties.detectionId, "selected");
+  assert.equal(feature.properties.frpMw, 175);
+  const size = footprintSizeMeters(feature.geometry);
+  assert.ok(Math.abs(size.width - 600) < 1, `scan width should be 600 m, got ${size.width}`);
+  assert.ok(Math.abs(size.height - 450) < 1, `track height should be 450 m, got ${size.height}`);
 });
 
-test("returns an empty collection without a selected fire or raw points", () => {
-  const event = makeEvent({ heatmapPoints: [] });
+test("a detection without a reported pixel size is drawn at the nominal 375 m", () => {
+  const [feature] = pointsToViirsPixelGeoJSON(detectionsToFootprintSources([thermalDetection({ id: "nominal" })])).features;
+  const size = footprintSizeMeters(feature.geometry);
+  assert.ok(Math.abs(size.width - VIIRS_PIXEL_SIDE_METERS) < 1);
+  assert.ok(Math.abs(size.height - VIIRS_PIXEL_SIDE_METERS) < 1);
+});
 
-  assert.deepEqual(eventsToViirsPixelGeoJSON([event], []), {
-    type: "FeatureCollection",
-    features: [],
-  });
-  assert.deepEqual(eventsToViirsPixelGeoJSON([event], [event.id]), {
-    type: "FeatureCollection",
-    features: [],
-  });
+test("footprints stay 375 m wide and inside [-180, 180] at the antimeridian", () => {
+  const result = pointsToViirsPixelGeoJSON(
+    [180, -180, 179.9995, -179.9995].map((lng, index) => makePoint({ id: `edge-${index}`, lat: 0, lng })),
+  );
+
+  assert.ok(result.features.length >= 1);
+  assert.ok(result.features.some((feature) => feature.geometry.type === "MultiPolygon"), "a footprint on the line must be split");
+  for (const feature of result.features) {
+    const positions = feature.geometry.type === "Polygon"
+      ? feature.geometry.coordinates.flat()
+      : feature.geometry.coordinates.flat(2);
+    assert.ok(positions.every(([lng]) => lng >= -180 && lng <= 180));
+    const size = footprintSizeMeters(feature.geometry);
+    assert.ok(Math.abs(size.width - VIIRS_PIXEL_SIDE_METERS) < 1, `width ${size.width}`);
+    assert.ok(Math.abs(size.height - VIIRS_PIXEL_SIDE_METERS) < 1, `height ${size.height}`);
+  }
+});
+
+test("malformed coordinates never become footprints", () => {
+  const result = pointsToViirsPixelGeoJSON([
+    makePoint({ id: "valid" }),
+    makePoint({ id: "nan-lng", lng: Number.NaN }),
+    makePoint({ id: "nan-lat", lat: Number.NaN }),
+    makePoint({ id: "east", lng: 181 }),
+    makePoint({ id: "west", lng: -181 }),
+  ]);
+  assert.deepEqual(result.features.map((feature) => feature.properties.detectionId), ["valid"]);
 });
 
 // ---------------------------------------------------------------------------
@@ -285,17 +147,17 @@ test("pointsToViirsPixelGeoJSON places per-point FRP on each feature", () => {
   assert.equal(result.features[2].properties.frpMw, 88);
 });
 
-test("pointsToViirsPixelGeoJSON uses point.id as fireId", () => {
+test("pointsToViirsPixelGeoJSON uses point.id as detectionId", () => {
   const points: CachedFirmsPoint[] = [
     makePoint({ id: "firms-unique-id", frpMw: 42 }),
   ];
 
   const result = pointsToViirsPixelGeoJSON(points);
 
-  assert.equal(result.features[0].properties.fireId, "firms-unique-id");
+  assert.equal(result.features[0].properties.detectionId, "firms-unique-id");
 });
 
-test("pointsToViirsPixelGeoJSON returns correct confidencePct and detectedAt", () => {
+test("pointsToViirsPixelGeoJSON carries the acquisition time", () => {
   const detectedAt = "2026-08-02T06:30:00.000Z";
   const points: CachedFirmsPoint[] = [
     makePoint({ confidencePct: 75, detectedAt }),
@@ -303,7 +165,6 @@ test("pointsToViirsPixelGeoJSON returns correct confidencePct and detectedAt", (
 
   const result = pointsToViirsPixelGeoJSON(points);
 
-  assert.equal(result.features[0].properties.confidencePct, 75);
   assert.equal(result.features[0].properties.detectedAt, detectedAt);
 });
 
@@ -476,8 +337,6 @@ test("pointsToViirsPixelGeoJSON collapses detections from different overpasses i
   assert.equal(props.frp, 95);
   // Most recent detectedAt wins.
   assert.equal(props.detectedAt, "2026-08-10T18:41:00.000Z", "collapsed cell must carry the latest detectedAt");
-  // Highest confidence wins.
-  assert.equal(props.confidencePct, 90, "collapsed cell must carry the highest confidence");
 });
 
 test("pointsToViirsPixelGeoJSON adjacent cells produce squares that tile edge-to-edge without overlapping", () => {
@@ -590,8 +449,8 @@ test("pointsToViirsPixelGeoJSON grid snapping holds across the antimeridian", ()
   // geometry pipeline must produce coordinate-valid output (all lng in [-180,180]).
   // Whether the output is a Polygon or MultiPolygon depends on whether the
   // snapped cell centre is close enough to ±180 to straddle — we do not assert
-  // the specific geometry type here; that is already covered by the shared
-  // makePixelPolygon tests (eventsToViirsPixelGeoJSON antimeridian test above).
+  // the specific geometry type here; splitting is covered by the antimeridian
+  // footprint test above.
   const points: CachedFirmsPoint[] = [
     makePoint({ id: "anti-east", lat: 0, lng: 179.999, frpMw: 55 }),
     makePoint({ id: "anti-west", lat: 0, lng: -179.999, frpMw: 70 }),

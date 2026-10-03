@@ -1,15 +1,20 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import type { FireSelection, FireWeather } from "@/lib/wildfire/types";
+import type { DetectionSelection, SnapshotProvenance, ValueBasis } from "@/lib/wildfire/types";
 import { formatThousands } from "@/lib/wildfire/format";
 import { estimateBurnedAreaHectares } from "@/lib/wildfire/fire-estimation";
+import { fetchModelledWeather, type ModelledWeather } from "@/lib/weather/open-meteo";
+import { formatCompactDecimal, formatDecimal, formatUtcDateTime } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import FireTelemetryDashboard from "./FireTelemetryDashboard";
 import PanelFooter from "./PanelFooter";
 
 interface FireDetailsPanelProps {
-  selection: FireSelection;
+  selection: DetectionSelection;
+  /** Provenance of the snapshot the selection came from; null if it is not known. */
+  provenance: SnapshotProvenance | null;
   onClose: () => void;
 }
 
@@ -19,82 +24,37 @@ interface LocationResult {
   failed: boolean;
 }
 
-const DATE_LOCALE: Record<"en" | "pt", string> = { en: "en-GB", pt: "pt-PT" };
-
-export default function FireDetailsPanel({ selection, onClose }: FireDetailsPanelProps) {
+export default function FireDetailsPanel({ selection, provenance, onClose }: FireDetailsPanelProps) {
   const { locale, t } = useLocale();
-  const [weather, setWeather] = useState<FireWeather | null>(null);
+  const [weather, setWeather] = useState<ModelledWeather | null>(null);
   const [weatherFailed, setWeatherFailed] = useState(false);
   const [locationResult, setLocationResult] = useState<LocationResult | null>(null);
   const locationKey = `${selection.id}:${locale}`;
   const hasCurrentLocation = locationResult?.key === locationKey;
   const locationName = hasCurrentLocation ? locationResult.label : null;
+  const isCluster = selection.kind === "cluster";
   const estimatedAreaHectares = useMemo(
-    () => estimateBurnedAreaHectares(selection.totalFrpMw, selection.startedAt),
-    [selection.startedAt, selection.totalFrpMw],
+    () => estimateBurnedAreaHectares(selection.totalFrpMw, selection.firstAcquiredAt),
+    [selection.firstAcquiredAt, selection.totalFrpMw],
   );
-  const fallbackLocationName = useMemo(() => {
-    const parts = [selection.region, selection.country].filter(
-      (part, index, values) => Boolean(part) && values.indexOf(part) === index,
-    );
-    return parts.join(", ") || `${selection.location.lat.toFixed(2)}, ${selection.location.lng.toFixed(2)}`;
-  }, [selection.country, selection.location.lat, selection.location.lng, selection.region]);
+  const fallbackLocationName = selection.country
+    ?? `${selection.location.lat.toFixed(2)}, ${selection.location.lng.toFixed(2)}`;
+  const acquisitionWindow = selection.firstAcquiredAt === selection.lastAcquiredAt
+    ? formatUtcDateTime(selection.lastAcquiredAt, locale)
+    : `${formatUtcDateTime(selection.firstAcquiredAt, locale)} – ${formatUtcDateTime(selection.lastAcquiredAt, locale)}`;
 
   useEffect(() => {
     const controller = new AbortController();
-    const params = new URLSearchParams({
-      latitude: String(selection.location.lat),
-      longitude: String(selection.location.lng),
-      current: [
-        "temperature_2m",
-        "relative_humidity_2m",
-        "precipitation",
-        "precipitation_probability",
-        "wind_speed_10m",
-        "wind_direction_10m",
-        "wind_gusts_10m",
-      ].join(","),
-      wind_speed_unit: "kmh",
-    });
-
-    fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Open-Meteo request failed: ${response.status}`);
-        return response.json() as Promise<OpenMeteoResponse>;
-      })
-      .then((payload) => {
-        const current = payload.current;
-        if (
-          !current
-          || !Number.isFinite(current.temperature_2m)
-          || !Number.isFinite(current.wind_speed_10m)
-          || !Number.isFinite(current.wind_direction_10m)
-          || !Number.isFinite(current.wind_gusts_10m)
-          || !Number.isFinite(current.relative_humidity_2m)
-          || !Number.isFinite(current.precipitation)
-          || !Number.isFinite(current.precipitation_probability)
-        ) {
-          throw new Error("Open-Meteo returned incomplete current weather");
-        }
-        setWeather({
-          temperatureC: current.temperature_2m,
-          windSpeedKmh: current.wind_speed_10m,
-          windDirectionDeg: current.wind_direction_10m,
-          windGustKmh: current.wind_gusts_10m,
-          relativeHumidityPct: current.relative_humidity_2m,
-          precipitationMm: current.precipitation,
-          precipitationProbabilityPct: current.precipitation_probability,
-          observedAt: current.time,
-        });
-      })
+    fetchModelledWeather(selection.location, controller.signal)
+      .then(setWeather)
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        console.error("Unable to load point weather", error);
+        if (controller.signal.aborted) return;
+        console.warn("Unable to load model weather", error instanceof Error ? error.name : "unknown");
         setWeatherFailed(true);
       });
-
     return () => controller.abort();
-  }, [selection.location.lat, selection.location.lng]);
+  }, [selection.location]);
+
   useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams({
@@ -114,36 +74,13 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
         failed: !payload.label,
       }))
       .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        console.warn("Unable to resolve precise fire location; using regional fallback", error);
+        if (controller.signal.aborted) return;
+        console.warn("Unable to resolve the nearest place; using the country instead", error instanceof Error ? error.name : "unknown");
         setLocationResult({ key: locationKey, label: null, failed: true });
       });
 
     return () => controller.abort();
   }, [locale, locationKey, selection.location.lat, selection.location.lng]);
-  function formatDateTime(iso: string): string {
-    // DD/MM/YYYY regardless of language: en-GB and pt-PT both order day-first,
-    // avoiding the en-US MM/DD ambiguity while still translating the chrome.
-    return new Date(iso).toLocaleString(DATE_LOCALE[locale], {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-
-  function formatUtcDateTime(iso: string): string {
-    return new Date(iso).toLocaleString(DATE_LOCALE[locale], {
-      timeZone: "UTC",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  }
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 sm:p-5">
@@ -176,19 +113,20 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
               {t.fireDetail.dateTimeUtcLabel}
             </p>
             <p className="mt-1 font-mono text-xs font-medium tabular-nums text-foreground/85">
-              {formatUtcDateTime(selection.detectedAt)}
+              {formatUtcDateTime(selection.lastAcquiredAt, locale)}
             </p>
           </div>
         </div>
         <div className="mt-3 border-t border-red-500/15 pt-3">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/65">
-            {t.fireDetail.burnScarReadoutLabel}
+          <p className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/65">
+            {t.fireDetail.areaLabel}
+            <BasisTag basis="estimated" />
           </p>
           <p className="mt-1 font-mono text-xl font-semibold leading-none tabular-nums text-foreground">
-            {formatThousands(estimatedAreaHectares)} <span className="text-xs font-medium text-foreground/65">ha</span>
+            ≈ {formatCompactDecimal(estimatedAreaHectares, locale)} <span className="text-xs font-medium text-foreground/65">ha</span>
           </p>
-          <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.1em] text-red-700 dark:text-red-300">
-            {t.fireDetail.viirsPixelReadoutLabel}
+          <p className="mt-2 text-[11px] leading-4 text-foreground/65">
+            {isCluster ? t.fireDetail.clusterAreaNote : t.fireDetail.estimatedAreaNote}
           </p>
         </div>
       </div>
@@ -196,7 +134,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold leading-snug tracking-[-0.02em] text-foreground">
-            {selection.kind === "cluster" ? t.fireDetail.clusterTitle : t.fireDetail.pointTitle}
+            {isCluster ? t.fireDetail.clusterTitle : t.fireDetail.pointTitle}
           </h2>
           <p className="mt-1 text-sm text-foreground/65">
             {locationName ?? fallbackLocationName}
@@ -214,32 +152,85 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
         </button>
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 text-sm">
-        <Stat
-          label={t.fireDetail.areaLabel}
-          value={`≈ ${formatThousands(estimatedAreaHectares)} ha`}
-          hint={selection.kind === "cluster" ? t.fireDetail.clusterAreaNote : t.fireDetail.estimatedAreaNote}
-        />
-        <Stat label={t.fireDetail.startLabel} value={formatDateTime(selection.startedAt)} />
-      </dl>
-
-      <div className="rounded-xl bg-red-500/8 p-3.5 ring-1 ring-inset ring-red-500/25">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">
-            {t.fireDetail.satelliteTelemetryTitle}
+      <section
+        data-testid="operational-status"
+        aria-labelledby="operational-status-title"
+        className="rounded-xl bg-surface-muted/45 p-3.5 ring-1 ring-inset ring-border/70"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id="operational-status-title" className="text-xs font-semibold uppercase tracking-wide text-foreground/65">
+            {t.fireDetail.operationalStatusLabel}
           </h3>
-          <dl className="grid grid-cols-2 gap-3 text-sm">
-            <Stat label={t.fireDetail.coordinatesLabel} value={`${selection.location.lat.toFixed(4)}, ${selection.location.lng.toFixed(4)}`} />
-            <Stat label={selection.kind === "cluster" ? t.fireDetail.combinedFrpLabel : t.fireDetail.frpLabel} value={`${selection.totalFrpMw.toFixed(1)} MW`} />
-            <Stat
-              label={selection.kind === "cluster" ? t.fireDetail.detectionCountLabel : t.fireDetail.confidenceLabel}
-              value={selection.kind === "cluster" ? formatThousands(selection.detectionCount) : `${Math.round(selection.confidencePct ?? 0)}%`}
-            />
-            <Stat label={t.fireDetail.detectedAtLabel} value={formatDateTime(selection.detectedAt)} />
-          </dl>
-          <p className="mt-3 text-xs leading-5 text-foreground/60">
-            {selection.kind === "cluster" ? t.fireDetail.clusterAreaNote : t.fireDetail.referencePerimeterNote}
-          </p>
+          <span className="rounded-full bg-background/60 px-2.5 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground ring-1 ring-inset ring-border/70">
+            {t.operationalStatus[selection.operationalStatus]}
+          </span>
         </div>
+        {selection.operationalStatus === "unknown" && (
+          <p className="mt-2 text-xs leading-5 text-foreground/65">{t.fireDetail.operationalUnknownNote}</p>
+        )}
+      </section>
+
+      <section aria-labelledby="satellite-observation-title" className="rounded-xl bg-red-500/8 p-3.5 ring-1 ring-inset ring-red-500/25">
+        <h3 id="satellite-observation-title" className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">
+          {t.fireDetail.satelliteTelemetryTitle}
+        </h3>
+        <dl className="grid grid-cols-2 gap-3 text-sm">
+          <Stat
+            label={isCluster ? t.fireDetail.combinedFrpLabel : t.fireDetail.frpLabel}
+            basis="measured"
+            value={`${formatDecimal(selection.totalFrpMw, locale)} MW`}
+          />
+          {isCluster ? (
+            <Stat label={t.fireDetail.detectionCountLabel} value={formatThousands(selection.detectionCount)} />
+          ) : (
+            <Stat
+              label={t.fireDetail.confidenceLabel}
+              basis="reported"
+              value={selection.confidence ? t.confidence[selection.confidence] : "—"}
+            />
+          )}
+          {isCluster && (
+            <Stat label={t.fireDetail.firstDetectionLabel} basis="measured" value={formatUtcDateTime(selection.firstAcquiredAt, locale)} />
+          )}
+          <Stat label={t.fireDetail.acquiredLabel} basis="measured" value={formatUtcDateTime(selection.lastAcquiredAt, locale)} />
+          <Stat label={t.fireDetail.coordinatesLabel} value={`${selection.location.lat.toFixed(4)}, ${selection.location.lng.toFixed(4)}`} />
+          <Stat label={t.fireDetail.countryLabel} basis="inferred" value={selection.country ?? "—"} />
+        </dl>
+        <p className="mt-3 text-xs leading-5 text-foreground/65">{t.fireDetail.footprintNote}</p>
+      </section>
+
+      {provenance && (
+        <section
+          data-testid="detection-provenance"
+          aria-labelledby="detection-provenance-title"
+          className="rounded-xl bg-surface-muted/35 p-3.5 ring-1 ring-inset ring-border/60"
+        >
+          <h3 id="detection-provenance-title" className="mb-2 text-xs font-semibold uppercase tracking-wide text-foreground/65">
+            {t.fireDetail.provenanceTitle}
+          </h3>
+          <dl className="space-y-2 text-xs">
+            <ProvenanceRow label={t.fireDetail.provenanceSource}>
+              <a
+                href={provenance.dataset.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 transition-colors hover:text-foreground"
+              >
+                {provenance.dataset.provider} · {provenance.dataset.product}
+              </a>
+            </ProvenanceRow>
+            <ProvenanceRow label={t.fireDetail.provenanceInstrument}>{provenance.dataset.instrument}</ProvenanceRow>
+            <ProvenanceRow label={t.fireDetail.provenanceAcquired}>{acquisitionWindow} UTC</ProvenanceRow>
+            <ProvenanceRow label={t.fireDetail.provenanceRetrieved}>
+              {provenance.retrievedAt ? `${formatUtcDateTime(provenance.retrievedAt, locale)} UTC` : t.fireDetail.provenanceNotRecorded}
+            </ProvenanceRow>
+            <ProvenanceRow label={t.fireDetail.provenanceProcessed}>
+              {formatUtcDateTime(provenance.processedAt, locale)} UTC
+            </ProvenanceRow>
+          </dl>
+          <p className="mt-2.5 text-[11px] leading-4 text-foreground/65">{provenance.dataset.attribution}</p>
+        </section>
+      )}
 
       <FireTelemetryDashboard
         key={selection.id}
@@ -247,9 +238,7 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
         weather={weather}
         weatherFailed={weatherFailed}
         locationName={locationName ?? fallbackLocationName}
-        region={selection.region}
         country={selection.country}
-        startedAt={selection.startedAt}
         selectionId={selection.id}
       />
 
@@ -258,25 +247,32 @@ export default function FireDetailsPanel({ selection, onClose }: FireDetailsPane
   );
 }
 
-interface OpenMeteoResponse {
-  current?: {
-    temperature_2m: number;
-    relative_humidity_2m: number;
-    precipitation: number;
-    precipitation_probability: number;
-    wind_speed_10m: number;
-    wind_direction_10m: number;
-    wind_gusts_10m: number;
-    time: string;
-  };
+function BasisTag({ basis }: { basis: ValueBasis }) {
+  const { t } = useLocale();
+  return (
+    <span className="rounded-full bg-background/55 px-1.5 py-0.5 font-mono text-[10px] font-semibold normal-case tracking-normal text-foreground/70 ring-1 ring-inset ring-border/70">
+      {t.basis[basis]}
+    </span>
+  );
 }
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Stat({ label, value, basis }: { label: string; value: string; basis?: ValueBasis }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/65">{label}</dt>
+      <dt className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/65">
+        {label}
+        {basis && <BasisTag basis={basis} />}
+      </dt>
       <dd className="mt-1 break-words font-mono text-xs font-medium tabular-nums text-foreground">{value}</dd>
-      {hint && <dd className="mt-1 text-[11px] leading-4 text-foreground/65">{hint}</dd>}
+    </div>
+  );
+}
+
+function ProvenanceRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-3">
+      <dt className="text-foreground/65">{label}</dt>
+      <dd className="min-w-0 break-words font-mono tabular-nums text-foreground/85">{children}</dd>
     </div>
   );
 }

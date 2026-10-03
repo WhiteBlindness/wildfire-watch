@@ -1,9 +1,10 @@
 name: Deploy to Cloudflare Workers
 
 # The single production deploy path. Every push to main is tested, typechecked,
-# linted and built before anything reaches Cloudflare; pull requests run the
-# same gate without deploying. Cloudflare's own Git integration (Workers Builds)
-# is intentionally disconnected so production never deploys twice.
+# linted, built and exercised end to end before anything reaches Cloudflare;
+# pull requests run the same gate without deploying. Cloudflare's own Git
+# integration (Workers Builds) is intentionally disconnected so production
+# never deploys twice.
 on:
   push:
     branches:
@@ -24,7 +25,7 @@ jobs:
   deploy:
     name: Verify, build and deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -50,6 +51,31 @@ jobs:
 
       - name: Build (OpenNext for Cloudflare)
         run: npm run build:cloudflare
+        env:
+          # CARTO basemaps key: public by design (every browser request to CARTO
+          # carries it), but only the production build needs it; pull-request
+          # builds stub CARTO in the end-to-end tests. GitHub prints non-secret
+          # environment values in the log, so an Actions secret of the same name
+          # is preferred over the repository variable when both exist.
+          NEXT_PUBLIC_CARTO_API_KEY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && (secrets.CARTO_API_KEY || vars.CARTO_API_KEY) || '' }}
+
+      # The production build under `wrangler dev`, with a synthetic FIRMS
+      # snapshot and every third-party host stubbed: no network data is used.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Upload end-to-end artefacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
       - name: Deploy to Cloudflare Workers
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

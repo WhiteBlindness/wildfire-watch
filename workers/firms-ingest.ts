@@ -5,10 +5,19 @@ import {
   isGlobalFirmsCachePayload,
   type CachedFirmsPoint,
   type FirmsCachePayload,
-  type IngestHealth,
   type RecurrenceHistory,
   type CellRecurrenceRecord,
 } from "../src/lib/wildfire/firms-cache";
+import {
+  nextIngestHealth,
+  parseIngestHealth,
+  type IngestAttempt,
+  type IngestCounts,
+  type IngestErrorCode,
+  type IngestHealthRecord,
+} from "../src/lib/wildfire/ingest-health";
+import { planIngestAlerts, planStallAlert, type IngestAlert } from "../src/lib/monitoring/ingest-alerts";
+import { deliverAlerts, type AlertChannel, type AlertDelivery } from "../src/lib/monitoring/alert-channels";
 import {
   parseCsv as parseCsvShared,
   parseFirmsCsvHeader,
@@ -327,15 +336,6 @@ function recurrenceCellKey(lat: number, lng: number): string {
   const latBucket = Math.floor((lat + 90) / RECURRENCE_CELL_DEGREES);
   const lngBucket = Math.floor((lng + 180) / RECURRENCE_CELL_DEGREES);
   return `${latBucket},${lngBucket}`;
-}
-
-function isPriorityCoords(lat: number, lng: number): boolean {
-  for (const region of PRIORITY_REGIONS) {
-    if (lng >= region.west && lng <= region.east && lat >= region.south && lat <= region.north) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**
@@ -801,105 +801,107 @@ export function selectPoints(rows: ParsedRow[]): CachedFirmsPoint[] {
 
 /**
  * Classify an unknown error into a short, sanitised code for the health record.
- * The raw error message is never stored because it may contain the FIRMS map
- * key (buildFirmsWorldUrl embeds it and a network failure echoes the URL).
+ * The raw error message is never stored or logged because it may contain the
+ * FIRMS map key (buildFirmsWorldUrl embeds it and a network failure can echo the URL).
  */
-function classifyError(error: unknown, mapKey: string): IngestHealth["errorCode"] {
+function classifyError(error: unknown, mapKey: string): IngestErrorCode {
+  if (error instanceof IngestFailure) return error.code;
   const msg = error instanceof Error ? error.message : String(error);
   // Strip the map key before any pattern matching to prevent key leakage.
   const sanitised = msg.replace(new RegExp(mapKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), "[REDACTED]");
   if (/incomplete/i.test(sanitised)) return "incomplete_feed";
   if (/parse/i.test(sanitised) || /column/i.test(sanitised)) return "parse_error";
   if (/\b[45]\d{2}\b/.test(sanitised)) return "http_error";
-  if (/network|fetch|ENOTFOUND|ETIMEDOUT/i.test(sanitised)) return "network";
+  if (error instanceof TypeError || /network|fetch|ENOTFOUND|ETIMEDOUT/i.test(sanitised)) return "network";
   return "unknown";
 }
 
-export async function refreshFirmsCache(env: FirmsIngestEnv): Promise<FirmsCachePayload> {
-  if (!env.FIRMS_MAP_KEY?.trim()) throw new Error("FIRMS_MAP_KEY is not configured");
+/** A failure whose cause is already classified; carries counts when the feed was read. */
+class IngestFailure extends Error {
+  constructor(readonly code: IngestErrorCode, readonly counts: IngestCounts = {}) {
+    super(`FIRMS ingest failed (${code})`);
+    this.name = "IngestFailure";
+  }
+}
 
-  const attemptedAt = new Date().toISOString();
+export interface IngestRunReport {
+  /** Health record as written for this run. */
+  health: IngestHealthRecord;
+  /** The snapshot written to KV, or null when the last known-good snapshot was kept. */
+  payload: FirmsCachePayload | null;
+  /** Alerts planned for this run (delivered only when channels are configured). */
+  alerts: IngestAlert[];
+  deliveries: AlertDelivery[];
+}
 
+export interface RefreshOptions {
+  /** Defaults to Date.now; injectable for tests. */
+  now?: () => number;
+  /** Where alerts go; defaults to none. */
+  channels?: AlertChannel[];
+}
+
+async function readPreviousHealth(kv: FirmsKvNamespace): Promise<IngestHealthRecord | null> {
+  try {
+    return parseIngestHealth(await kv.get(FIRMS_INGEST_HEALTH_KEY, "json"));
+  } catch {
+    return null;
+  }
+}
+
+async function writeHealth(kv: FirmsKvNamespace, record: IngestHealthRecord): Promise<void> {
+  // Best effort: a failed health write must never mask the run's real outcome.
+  await kv.put(FIRMS_INGEST_HEALTH_KEY, JSON.stringify(record)).catch(() => {
+    console.warn("FIRMS ingest health could not be written");
+  });
+}
+
+async function readRecurrenceHistory(kv: FirmsKvNamespace): Promise<RecurrenceHistory> {
+  try {
+    const stored = await kv.get<RecurrenceHistory>(FIRMS_RECURRENCE_HISTORY_KEY, "json");
+    if (stored && typeof stored === "object" && typeof stored.totalRuns === "number") return stored;
+  } catch {
+    // A missing or corrupt history is treated as empty; it never fails the ingest.
+  }
+  return { cells: {}, totalRuns: 0 };
+}
+
+/**
+ * Downloads the worldwide feed, selects the map sample and writes the
+ * snapshot. Throws IngestFailure (or an unclassified error) without touching
+ * the existing snapshot when anything is wrong with the feed.
+ */
+async function ingestSnapshot(env: FirmsIngestEnv, now: () => number): Promise<{ payload: FirmsCachePayload; counts: IngestCounts }> {
   // Load recurrence history once, before consuming the stream.  Use the
   // history *as it was before this run* for suppression decisions (updating
   // first would make new cells suppress themselves on their first appearance).
-  let history: RecurrenceHistory = { cells: {}, totalRuns: 0 };
-  try {
-    const stored = await env.FIRMS_CACHE.get<RecurrenceHistory>(
-      FIRMS_RECURRENCE_HISTORY_KEY,
-      "json",
-    );
-    if (stored && typeof stored === "object" && typeof stored.totalRuns === "number") {
-      history = stored;
-    }
-  } catch {
-    // Treat a missing or corrupt history as an empty one — never fail the ingest
-    // just because the optional history record is unreadable.
-  }
+  const history = await readRecurrenceHistory(env.FIRMS_CACHE);
 
   let response: Response;
   try {
-    response = await fetch(
-      buildFirmsWorldUrl(env.FIRMS_MAP_KEY),
-      { cache: "no-store", headers: { Accept: "text/csv" } },
-    );
-  } catch (fetchError: unknown) {
-    const health: IngestHealth = {
-      attemptedAt,
-      outcome: "failure",
-      errorCode: "network",
-    };
-    // Best-effort health write — never let it throw and mask the real error.
-    await env.FIRMS_CACHE.put(FIRMS_INGEST_HEALTH_KEY, JSON.stringify(health)).catch(() => {});
-    throw fetchError;
+    response = await fetch(buildFirmsWorldUrl(env.FIRMS_MAP_KEY), { cache: "no-store", headers: { Accept: "text/csv" } });
+  } catch {
+    throw new IngestFailure("network");
   }
-
   if (!response.ok) {
-    const health: IngestHealth = {
-      attemptedAt,
-      outcome: "failure",
-      errorCode: "http_error",
-    };
-    await env.FIRMS_CACHE.put(FIRMS_INGEST_HEALTH_KEY, JSON.stringify(health)).catch(() => {});
-    throw new Error(`NASA FIRMS request failed: ${response.status}`);
+    await response.body?.cancel().catch(() => undefined);
+    throw new IngestFailure("http_error");
   }
-
-  if (!response.body) {
-    const health: IngestHealth = {
-      attemptedAt,
-      outcome: "failure",
-      errorCode: "network",
-    };
-    await env.FIRMS_CACHE.put(FIRMS_INGEST_HEALTH_KEY, JSON.stringify(health)).catch(() => {});
-    throw new Error("NASA FIRMS response has no body");
-  }
+  if (!response.body) throw new IngestFailure("network");
 
   // Stream the CSV body through the three-tier accumulators.
   const acc = makeAccumulators();
-
   try {
-    acc.sourceRows = await consumeFirmsCsvStream(
-      response.body,
-      (line, cols, expectedCells) => {
-        const parsed = parseDataLine(line, cols, expectedCells);
-        if (parsed !== null) {
-          accumulateRow(acc, parsed, history, history.totalRuns);
-        }
-      },
-    );
+    acc.sourceRows = await consumeFirmsCsvStream(response.body, (line, cols, expectedCells) => {
+      const parsed = parseDataLine(line, cols, expectedCells);
+      if (parsed !== null) accumulateRow(acc, parsed, history, history.totalRuns);
+    });
   } catch (streamError: unknown) {
-    const health: IngestHealth = {
-      attemptedAt,
-      outcome: "failure",
-      errorCode: classifyError(streamError, env.FIRMS_MAP_KEY),
-    };
-    await env.FIRMS_CACHE.put(FIRMS_INGEST_HEALTH_KEY, JSON.stringify(health)).catch(() => {});
-    throw streamError;
+    throw new IngestFailure(classifyError(streamError, env.FIRMS_MAP_KEY));
   }
 
   const points = finaliseAccumulators(acc);
-  const generatedAt = new Date().toISOString();
-
+  const generatedAt = new Date(now()).toISOString();
   const payload: FirmsCachePayload = {
     version: 1,
     source: "NASA FIRMS VIIRS_SNPP_NRT",
@@ -908,52 +910,81 @@ export async function refreshFirmsCache(env: FirmsIngestEnv): Promise<FirmsCache
     filteredRows: acc.filteredRows,
     points,
   };
-
-  if (!isGlobalFirmsCachePayload(payload)) {
-    const health: IngestHealth = {
-      attemptedAt,
-      outcome: "failure",
-      errorCode: "incomplete_feed",
-      sourceRows: acc.sourceRows,
-      filteredRows: acc.filteredRows,
-      selectedPoints: points.length,
-      suppressedRows: acc.suppressedRows,
-    };
-    await env.FIRMS_CACHE.put(FIRMS_INGEST_HEALTH_KEY, JSON.stringify(health)).catch(() => {});
-    throw new Error(`NASA FIRMS returned an incomplete worldwide feed (${points.length} points)`);
-  }
-
-  // Update recurrence history AFTER successful selection.
-  // Run unconditionally (regardless of ENABLE_PERSISTENT_SOURCE_SUPPRESSION)
-  // so the window fills while the feature is off.
-  const updatedHistory = updateRecurrenceHistory(history, acc.activeCellKeys, generatedAt);
-  await env.FIRMS_CACHE.put(
-    FIRMS_RECURRENCE_HISTORY_KEY,
-    JSON.stringify(updatedHistory),
-  ).catch(() => {});
-
-  // Deliberately omit a KV TTL. A failed NASA refresh must not erase the
-  // last known-good worldwide snapshot; freshness is communicated separately.
-  await env.FIRMS_CACHE.put(FIRMS_CACHE_KEY, JSON.stringify(payload));
-
-  const health: IngestHealth = {
-    attemptedAt,
-    outcome: "success",
+  const counts: IngestCounts = {
     sourceRows: acc.sourceRows,
     filteredRows: acc.filteredRows,
     selectedPoints: points.length,
     suppressedRows: acc.suppressedRows,
   };
-  await env.FIRMS_CACHE.put(FIRMS_INGEST_HEALTH_KEY, JSON.stringify(health)).catch(() => {});
 
-  console.log("FIRMS cache refreshed", {
-    generatedAt: payload.generatedAt,
-    sourceRows: payload.sourceRows,
-    filteredRows: payload.filteredRows,
-    cachedPoints: payload.points.length,
-    suppressedRows: acc.suppressedRows,
-    recurrenceCells: Object.keys(updatedHistory.cells).length,
-  });
+  // Never replace a good worldwide snapshot with an empty or regional one.
+  if (!isGlobalFirmsCachePayload(payload)) throw new IngestFailure("incomplete_feed", counts);
 
-  return payload;
+  // Update recurrence history AFTER successful selection.
+  // Run unconditionally (regardless of ENABLE_PERSISTENT_SOURCE_SUPPRESSION)
+  // so the window fills while the feature is off.
+  const updatedHistory = updateRecurrenceHistory(history, acc.activeCellKeys, generatedAt);
+  await env.FIRMS_CACHE.put(FIRMS_RECURRENCE_HISTORY_KEY, JSON.stringify(updatedHistory)).catch(() => {});
+
+  // Deliberately omit a KV TTL. A failed NASA refresh must not erase the
+  // last known-good worldwide snapshot; freshness is communicated separately.
+  try {
+    await env.FIRMS_CACHE.put(FIRMS_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // Most likely the free-plan daily KV write limit; the previous snapshot stays.
+    throw new IngestFailure("storage_error", counts);
+  }
+  return { payload, counts };
+}
+
+/**
+ * One scheduled run: records the attempt in the health record (which carries
+ * the failure counter and the alert debounce state), keeps the last good
+ * snapshot on any failure, and notifies the operator when the planner says so.
+ * Never throws for upstream problems; the report says what happened.
+ */
+export async function refreshFirmsCache(env: FirmsIngestEnv, options: RefreshOptions = {}): Promise<IngestRunReport> {
+  const now = options.now ?? Date.now;
+  const channels = options.channels ?? [];
+  const attemptedAt = new Date(now()).toISOString();
+  let previous = await readPreviousHealth(env.FIRMS_CACHE);
+
+  const stall = planStallAlert(previous, now());
+  const deliveries: AlertDelivery[] = [];
+  if (stall.alerts.length > 0 && previous) {
+    // Record the notification before the heavy work, in case this run is stopped too.
+    previous = { ...previous, alerts: stall.alertState };
+    deliveries.push(...await deliverAlerts(stall.alerts, channels));
+    await writeHealth(env.FIRMS_CACHE, previous);
+  }
+
+  let payload: FirmsCachePayload | null = null;
+  let attempt: IngestAttempt;
+  if (!env.FIRMS_MAP_KEY?.trim()) {
+    attempt = { attemptedAt, outcome: "failure", errorCode: "configuration" };
+  } else {
+    try {
+      const result = await ingestSnapshot(env, now);
+      payload = result.payload;
+      attempt = { attemptedAt, outcome: "success", ...result.counts };
+    } catch (error) {
+      attempt = {
+        attemptedAt,
+        outcome: "failure",
+        errorCode: classifyError(error, env.FIRMS_MAP_KEY),
+        ...(error instanceof IngestFailure ? error.counts : {}),
+      };
+    }
+  }
+
+  const recorded = nextIngestHealth(previous, attempt);
+  const plan = planIngestAlerts(recorded, now());
+  const { alerts: _previousAlerts, ...withoutAlerts } = recorded;
+  void _previousAlerts;
+  const health: IngestHealthRecord = plan.alertState ? { ...withoutAlerts, alerts: plan.alertState } : withoutAlerts;
+
+  deliveries.push(...await deliverAlerts(plan.alerts, channels));
+  await writeHealth(env.FIRMS_CACHE, health);
+
+  return { health, payload, alerts: [...stall.alerts, ...plan.alerts], deliveries };
 }

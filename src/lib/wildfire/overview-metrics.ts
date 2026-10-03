@@ -1,42 +1,38 @@
-import type { WildfireEvent } from "./types";
-
-/** The deliberately simple projection used by the global overview. */
-export const PROJECTED_BURN_AREA_HECTARES_PER_MW = 0.4;
+import type { ThermalDetection } from "./types";
 
 export interface OverviewMetrics {
   totalFrpMw: number;
   maxFrpMw: number;
   averageFrpMw: number;
-  projectedBurnAreaHectares: number;
   validIntensityCount: number;
+  /** Detections the source itself rates as high confidence. */
+  highConfidenceCount: number;
 }
 
 function isValidFrp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-/**
- * Prefer the event's measured point value, falling back to a source-provided
- * peak value when the record does not carry an individual detection.
- */
-export function resolveEventIntensityMw(event: WildfireEvent): number | null {
-  if (isValidFrp(event.satelliteDetection?.frpMw)) return event.satelliteDetection.frpMw;
-  if (isValidFrp(event.maxFrpMw)) return event.maxFrpMw;
-  return null;
+/** FRP is validated at ingest; this guards against malformed values reaching the totals. */
+function measuredFrp(detection: ThermalDetection): number | null {
+  return isValidFrp(detection.frpMw) ? detection.frpMw : null;
 }
 
 /**
- * Calculates the values shown by the global/country overview. The burned-area
- * value is explicitly a projection from total radiative power, not a measured
- * burn scar and not the time-based incident estimate used in fire details.
+ * Calculates the values shown by the global/country overview. Every value is a
+ * measurement or a count of what the source reported, over the detections on
+ * the map. The snapshot is a sample that keeps the strongest detections, so
+ * these are not global totals, and no burned area is extrapolated from them.
  */
-export function calculateOverviewMetrics(events: WildfireEvent[]): OverviewMetrics | null {
+export function calculateOverviewMetrics(detections: ThermalDetection[]): OverviewMetrics | null {
   let totalFrpMw = 0;
   let maxFrpMw = Number.NEGATIVE_INFINITY;
   let validIntensityCount = 0;
+  let highConfidenceCount = 0;
 
-  for (const event of events) {
-    const intensityMw = resolveEventIntensityMw(event);
+  for (const detection of detections) {
+    if (detection.confidence === "high") highConfidenceCount += 1;
+    const intensityMw = measuredFrp(detection);
     if (intensityMw === null) continue;
     totalFrpMw += intensityMw;
     maxFrpMw = Math.max(maxFrpMw, intensityMw);
@@ -49,22 +45,19 @@ export function calculateOverviewMetrics(events: WildfireEvent[]): OverviewMetri
     totalFrpMw,
     maxFrpMw,
     averageFrpMw: totalFrpMw / validIntensityCount,
-    projectedBurnAreaHectares: totalFrpMw * PROJECTED_BURN_AREA_HECTARES_PER_MW,
     validIntensityCount,
+    highConfidenceCount,
   };
 }
 
 /**
  * The most intense detections in the current scope, strongest first. This is
- * the panel's keyboard and screen-reader route into individual hotspots, so it
- * only lists events whose intensity is actually known.
+ * the panel's keyboard and screen-reader route into individual detections.
  */
-export function selectStrongestEvents(events: WildfireEvent[], limit: number): WildfireEvent[] {
+export function selectStrongestDetections(detections: ThermalDetection[], limit: number): ThermalDetection[] {
   if (limit <= 0) return [];
-  return events
-    .map((event) => ({ event, intensity: resolveEventIntensityMw(event) }))
-    .filter((entry): entry is { event: WildfireEvent; intensity: number } => entry.intensity !== null)
-    .sort((a, b) => b.intensity - a.intensity)
-    .slice(0, limit)
-    .map((entry) => entry.event);
+  return detections
+    .filter((detection) => measuredFrp(detection) !== null)
+    .sort((a, b) => b.frpMw - a.frpMw)
+    .slice(0, limit);
 }

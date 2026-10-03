@@ -26,8 +26,12 @@ const COUNTRY_BOUNDARIES: CountryBoundary[] = countryCollection.features
     bounds: bbox(countryFeature),
   }));
 
-/** Resolve a FIRMS coordinate against Natural Earth country boundaries. */
-export function lookupPlace(lat: number, lng: number): { country: string; region: string } {
+/**
+ * Infers the country containing a coordinate from Natural Earth boundaries
+ * (110 m scale). Returns null at sea or outside every boundary. This is a
+ * WildfireWatch inference, not a value reported by the data source.
+ */
+export function lookupCountry(lat: number, lng: number): string | null {
   const hit = COUNTRY_BOUNDARIES.find(({ bounds, feature: countryFeature }) => (
     lng >= bounds[0]
     && lat >= bounds[1]
@@ -35,7 +39,5 @@ export function lookupPlace(lat: number, lng: number): { country: string; region
     && lat <= bounds[3]
     && geoContains(countryFeature, [lng, lat])
   ));
-
-  if (hit) return { country: hit.country, region: hit.country };
-  return { country: "International waters / unmatched", region: "Coordinate only" };
+  return hit?.country ?? null;
 }

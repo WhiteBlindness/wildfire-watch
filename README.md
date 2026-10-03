@@ -4,11 +4,11 @@ A full-screen map of global wildfire activity, updated hourly from NASA FIRMS sa
 
 **Live:** https://wildfire-watch.duartemonteiro.workers.dev
 
-**Status:** Live. The page loaded during the last check, but the FIRMS feed was still waiting for data.
+**Status:** Live, deployed from `main` by GitHub Actions.
 
-Click any hotspot, or pick one from the panel's list of the most intense detections, to see its radiative power, a modelled burned-area estimate, modelled weather, the nearest air-quality reading and related news. Interface in European Portuguese and English, dark by default.
+Select any detection on the map, or pick one from the panel's keyboard-accessible list of the most intense detections, to see what the satellite measured (radiative power, acquisition time, the source's confidence), where the data came from, a labelled burned-area estimate, model weather, the nearest air-quality reading and related news. The overview always says whether the data is current, the last refresh failed, or the snapshot is out of date. Interface in European Portuguese and English, dark by default.
 
-WildfireWatch is an unofficial portfolio project. Satellite detections arrive a few hours late, not every thermal anomaly is a wildfire, and every area or air-quality figure is an estimate. In an emergency, call 112.
+WildfireWatch is an unofficial portfolio project. Satellite detections arrive a few hours late, not every thermal anomaly is a wildfire, a satellite cannot tell whether a fire is active, contained or out, and every area or air-quality figure is an estimate. In an emergency, call 112.
 
 ## Motivation
 
@@ -20,9 +20,11 @@ This is also a portfolio project. The goal is a working product that uses real d
 
 ## Problems worth solving
 
-**The global feed is too big for a browser.** FIRMS returns every thermal anomaly on Earth for the requested window, which can create a multi-megabyte payload full of redundant points. Simple truncation can drop whole regions. Sorting by intensity alone would let agricultural burns in Africa crowd out other detections. Instead, the Worker groups detections into a 2° grid and keeps the strongest point in each cell. It then reserves part of the data budget for fires with the highest radiative power.
+**The global feed is too big for a browser.** FIRMS returns every thermal anomaly on Earth for the requested window, which can create a multi-megabyte payload full of redundant points. Simple truncation can drop whole regions. Sorting by intensity alone would let agricultural burns in Africa crowd out other detections. Instead, the Worker keeps every detection in Portugal, reserves part of the budget for the highest radiative power worldwide, and fills the rest round-robin over a 2° grid so no continent goes dark.
 
-**Satellites report pixels, not fires.** FIRMS provides isolated hot points, while people look for incidents. The app clusters detections into fire groups, builds a concave hull to suggest the affected area, and removes detections as they age.
+**Satellites report heat, not fires.** FIRMS provides hot pixels, while people look for incidents. Calling a pixel an "active fire" with a "severity" claims more than the data supports. The model keeps observations (what VIIRS measured), derived values (what WildfireWatch computes, labelled as estimates) and operational status (which only an authority can report, so it is "unknown" here) apart. The map clusters detections only for display, and at detail zoom draws each one as its real sensor pixel, not as a perimeter.
+
+**A recent snapshot is not the same as current data.** If the 13:00 refresh succeeded and the 13:05 one failed, a visitor at 13:10 should not be told the data is current. Snapshot freshness and ingest health are tracked separately, the panel combines them honestly, and repeated failures can notify the maintainer on Discord or Telegram.
 
 **A page load must never wait on NASA.** The upstream API is slow and rate-limited. An hourly Worker cron decouples them: ingestion writes a processed payload to KV, requests only ever read KV. Users never feel the upstream latency, and the map key is never exposed.
 
@@ -34,25 +36,27 @@ This is also a portfolio project. The goal is a working product that uses real d
 
 Wildfire data sources differ in field names, units, confidence scales, update frequency, and geographic coverage. Without an adapter layer, the interface tends to depend on whichever feed it started with.
 
-Here every source is mapped into one normalized schema (`src/lib/wildfire/types.ts`) before it reaches a component. The map and panel never learn where a fire came from. Adding EFFIS or the Portuguese civil protection feed means writing an adapter, not touching the UI.
+Here every source is mapped into one normalized model (`src/lib/wildfire/types.ts`) before it reaches a component, and every observation keeps a reference to its dataset's provenance. The map and panel never parse a provider format. Adding EFFIS or the Portuguese civil protection feed means writing an adapter and a reconciliation step, not touching the UI.
 
 ```
 NASA FIRMS CSV ──┐
-EFFIS (planned) ─┼─→ adapter ─→ normalized schema ─→ map / panel
-ANEPC (planned) ─┘
+EFFIS (planned) ─┼─→ adapter ─→ observations + provenance ─→ map / panel
+ANEPC (planned) ─┘                    (+ feed health)
 ```
 
 ## How the data flows
 
-A Cloudflare Worker cron job runs hourly (`workers/firms-ingest.ts`), pulls the last three days of VIIRS thermal anomalies for the whole world, and writes a processed payload to KV. The app reads from KV, so a page load never waits on NASA.
+A Cloudflare Worker cron job runs hourly (`workers/firms-ingest.ts`), streams the last three days of VIIRS thermal anomalies for the whole world, and writes a processed snapshot to KV, with an ingest-health record beside it. A snapshot is replaced only by a complete worldwide feed; any failure keeps the last known-good one. The app reads from KV, so a page load never waits on NASA.
 
-The raw global feed is far larger than a browser should receive, so ingestion downsamples it: detections are bucketed into a 2° grid, the strongest are kept per cell, and the result is capped at 6,000 points with 1,500 reserved for the highest-radiative-power fires. Intensity survives; noise doesn't.
+The raw global feed is far larger than a browser should receive, so ingestion samples it: up to 15,000 points, every detection in Portugal, 1,500 slots for the highest radiative power, and a round-robin over 2° cells for the rest. Overview figures describe this sample, and the panel says so.
 
-Individual detections are then clustered into fires, given a concave hull for their burned-area polygon, and enriched with reverse-geocoded place names, weather and air quality.
+When a visitor selects a detection, the panel fetches full-resolution FIRMS detections around it, a place name (Nominatim), the nearest PM2.5 reading (OpenAQ) and headlines (Google News RSS) through Worker routes that round inputs, cache results and cap upstream calls. Model weather comes straight from Open-Meteo in the browser.
+
+[docs/operations.md](docs/operations.md) covers the data model, feed health, alerts, API protection, the free-plan budget and the live smoke checklist. [docs/compliance.md](docs/compliance.md) covers the legal and third-party review.
 
 ## Stack
 
-Next.js App Router · TypeScript · MapLibre GL JS via react-map-gl · Turf.js · Tailwind · shadcn/ui
+Next.js App Router · TypeScript · MapLibre GL JS via react-map-gl · Turf.js · Tailwind · Playwright
 
 Deployed to Cloudflare Workers through the OpenNext adapter, which is the constraint that shapes the server code: no Node built-ins, no `fs`, no `path`. Everything runs on free tier.
 
@@ -63,18 +67,20 @@ npm install
 npm run dev
 ```
 
-Live FIRMS data requires a NASA map key in `FIRMS_MAP_KEY` (available free from firms.modaps.eosdis.nasa.gov). Without one, set `DATA_SOURCE=mock` in `wrangler.jsonc` to use the deterministic mock generator. It uses the same schema without a network connection, which is useful for interface work.
+Live FIRMS data requires a NASA map key in `FIRMS_MAP_KEY` (available free from firms.modaps.eosdis.nasa.gov); see `.env.example` for the other optional secrets. Without a key the map has no snapshot to show. For interface work offline, the end-to-end setup serves the production build with a deterministic synthetic snapshot:
 
 ```bash
-npm test                 # every suite below, in sequence
+npm run build:cloudflare
+node e2e/support/start-server.mjs   # http://127.0.0.1:8788, synthetic data in local KV
+```
+
+```bash
+npm test                 # unit and static tests
+npm run test:unit        # every *.test.ts; `npm run test:unit -- viirs` filters by path
+npm run test:static      # contrast floor, icon semantics, PT-PT copy, legal links, no trackers
+npm run test:e2e         # Playwright against the production build, third parties stubbed
 npm run typecheck
 npm run lint
-npm run test:sampling    # ingest downsampling
-npm run test:temporal    # detection ageing
-npm run test:air-quality
-npm run test:language    # guards PT-PT copy against Brazilian forms and gerunds
-npm run test:legal       # PT/EN legal pages stay in step; links stay https
-npm run test:compliance  # contrast floor, icon semantics, no cookies or trackers
 
 npm run deploy           # build + ship to Cloudflare
 ```
@@ -86,16 +92,17 @@ GitHub Actions (`.github/workflows/deploy.yml`) is the only deploy path. On ever
 1. `npm test`
 2. `npm run typecheck`
 3. `npm run lint`
-4. `npm run build:cloudflare` (`opennextjs-cloudflare build`, which creates `.open-next/worker.js` and `.open-next/assets`)
-5. `npm run deploy:cloudflare` (needs the `CLOUDFLARE_API_TOKEN` secret)
+4. `npm run build:cloudflare` (`opennextjs-cloudflare build`, which creates `.open-next/worker.js` and `.open-next/assets`; on `main`, the CARTO basemap key `CARTO_API_KEY` is passed to the build)
+5. `npm run test:e2e` (Playwright report, traces and videos are kept when it fails)
+6. `npm run deploy:cloudflare` (needs the `CLOUDFLARE_API_TOKEN` secret)
 
-Pull requests to `main` run steps 1 to 4 and never deploy. `npm run deploy` still builds and deploys in one go for local use.
+Pull requests to `main` run steps 1 to 5 and never deploy. `npm run deploy` still builds and deploys in one go for local use.
 
 Cloudflare's own Git integration (Workers Builds) is disconnected on purpose. Reconnecting it would deploy every push twice, and with its default commands the build fails, because plain `next build` never produces `.open-next/assets`.
 
 ## Legal, privacy and accessibility
 
-The site sets no cookies, has no analytics, accounts, forms or advertising, and stores only the visitor's language and theme in `localStorage`. The visitor's browser does talk directly to CARTO, Esri and Open-Meteo, which the privacy policy discloses.
+The site sets no cookies, has no analytics, accounts, forms or advertising, and stores only the visitor's language and theme in `localStorage`. The visitor's browser does talk directly to CARTO, Esri and Open-Meteo, which the privacy policy discloses and the Content Security Policy enforces.
 
 - `/sobre`: what the data is and is not, methodology, data sources and attributions, contact and accessibility statement.
 - `/privacidade`: privacy and cookie policy (GDPR, Portuguese Law 41/2004).
@@ -105,4 +112,4 @@ Legal copy lives in `src/lib/legal/` in both languages; the operator's identity 
 
 ## Status
 
-The current live adapter uses FIRMS. EFFIS and ANEPC adapters are planned; the data-source interfaces already allow for them.
+The live adapter uses FIRMS. EFFIS and ANEPC adapters are planned; the model already keeps operational status apart from satellite observations so that a second source can add it without overwriting what FIRMS measured.

@@ -1,33 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleFireDetailRequest, resolveFirmsMapKey } from "./route";
+import { createDetailLookups, handleFireDetailRequest, resolveFirmsMapKey } from "./route";
 
 // ---------------------------------------------------------------------------
-// Minimal KV stub
+// Environment: each test gets its own in-memory cache and FIRMS call budget.
 // ---------------------------------------------------------------------------
 
-interface KvStore {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
-}
-
-function makeKv(initial: Record<string, string> = {}): KvStore {
-  const store = new Map<string, string>(Object.entries(initial));
-  return {
-    async get(key: string): Promise<string | null> {
-      return store.get(key) ?? null;
-    },
-    async put(key: string, value: string): Promise<void> {
-      store.set(key, value);
-    },
-  };
-}
-
-function makeEnv(
-  mapKey: string,
-  kv: KvStore = makeKv(),
-): { FIRMS_CACHE: KvStore; FIRMS_MAP_KEY: string } {
-  return { FIRMS_CACHE: kv, FIRMS_MAP_KEY: mapKey };
+function makeEnv(mapKey: string, lookups = createDetailLookups()): { FIRMS_MAP_KEY: string; lookups: ReturnType<typeof createDetailLookups> } {
+  return { FIRMS_MAP_KEY: mapKey, lookups };
 }
 
 // ---------------------------------------------------------------------------
@@ -131,10 +111,10 @@ test("rejects inverted bbox (north <= south)", async () => {
   assert.equal(res.status, 400);
 });
 
-test("rejects days outside 1-10 range", async () => {
+test("rejects days outside the 1-5 range FIRMS accepts", async () => {
   const env = makeEnv("test-key");
   const resHigh = await handleFireDetailRequest(
-    request(validParams({ days: "11" })),
+    request(validParams({ days: "6" })),
     env,
   );
   assert.equal(resHigh.status, 400);
@@ -292,43 +272,75 @@ test("caps response at 20,000 points when upstream returns more", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// KV cache hit
+// Caching, quantisation and the upstream budget
 // ---------------------------------------------------------------------------
 
-test("serves a KV-cached response without calling NASA", async () => {
+test("serves a repeated or nearly identical box from memory without calling NASA again", async () => {
   const originalFetch = globalThis.fetch;
-  let nasaCalled = false;
-  globalThis.fetch = async () => {
-    nasaCalled = true;
-    return new Response("should not be called", { status: 500 });
+  const requested: string[] = [];
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    requested.push(input instanceof Request ? input.url : String(input));
+    return new Response(makeCsv(5), { status: 200, headers: { "Content-Type": "text/csv" } });
   };
 
   try {
-    const cached = JSON.stringify({
-      version: 1,
-      source: "NASA FIRMS VIIRS_SNPP_NRT",
-      generatedAt: "2026-08-01T12:00:00.000Z",
-      bbox: [-10.5, 37.0, -8.5, 39.0],
-      days: 3,
-      points: [{ id: "firms-abc", lat: -9.5, lng: 38.0, frpMw: 55, confidencePct: 90, detectedAt: "2026-08-01T12:00:00.000Z" }],
-    });
+    const env = makeEnv("valid-key");
+    const first = await handleFireDetailRequest(request(validParams({ west: "-10.53", east: "-8.47" })), env);
+    const second = await handleFireDetailRequest(request(validParams({ west: "-10.51", east: "-8.42" })), env);
 
-    // Pre-populate KV with a cache entry for the rounded bbox key.
-    const kv = makeKv({ "fire-detail:v1:-10.5,37,38,-8.5:3": "ignored" });
-    // The route rounds to 2 decimal places, so -10.5 → -10.5, 37.0 → 37, -8.5 → -8.5, 39.0 → 39.
-    const key = "fire-detail:v1:-10.5,37,-8.5,39:3";
-    await kv.put(key, cached);
-    const env = makeEnv("valid-key", kv);
-
-    const res = await handleFireDetailRequest(request(validParams()), env);
-
-    assert.equal(res.status, 200);
-    assert.equal(nasaCalled, false, "NASA must not be called when KV cache is populated");
-    const header = res.headers.get("x-wildfire-source");
-    assert.equal(header, "cloudflare-kv");
+    assert.equal(first.status, 200);
+    assert.equal(first.headers.get("x-wildfire-source"), "nasa-firms");
+    assert.equal(second.headers.get("x-wildfire-source"), "memory");
+    assert.equal(requested.length, 1, "both boxes snap to the same 0.1° grid");
+    assert.ok(requested[0].includes("/-10.6,37,-8.4,39/3"), requested[0]);
+    const body = await second.json() as { bbox: number[] };
+    assert.deepEqual(body.bbox, [-10.6, 37, -8.4, 39]);
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("answers 503 with Retry-After once this isolate's FIRMS budget is spent", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(makeCsv(1), { status: 200, headers: { "Content-Type": "text/csv" } });
+  };
+
+  try {
+    const env = makeEnv("valid-key");
+    const statuses: number[] = [];
+    for (let index = 0; index < 22; index += 1) {
+      const response = await handleFireDetailRequest(request(validParams({ west: String(-10 - index * 0.2), east: String(-9 - index * 0.2) })), env);
+      statuses.push(response.status);
+      if (response.status === 503) assert.ok(Number(response.headers.get("retry-after")) >= 1);
+    }
+    assert.equal(calls, 20);
+    assert.deepEqual(statuses.slice(-2), [503, 503]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a network error never logs the map key", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  const logged: string[] = [];
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    throw new TypeError(`fetch failed: ${input instanceof Request ? input.url : String(input)}`);
+  };
+  console.error = (...args: unknown[]) => { logged.push(args.map(String).join(" ")); };
+
+  try {
+    const res = await handleFireDetailRequest(request(validParams()), makeEnv("my-secret-key"));
+    assert.equal(res.status, 502);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+  }
+  assert.ok(logged.length > 0);
+  assert.ok(logged.every((line) => !line.includes("my-secret-key")), logged.join("\n"));
 });
 
 // ---------------------------------------------------------------------------
@@ -544,8 +556,7 @@ test("requests differing only by start date do not share a cache entry", async (
   };
 
   try {
-    const kv = makeKv();
-    const env = makeEnv("valid-key", kv);
+    const env = makeEnv("valid-key");
     const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
 
     // First request: with start date.

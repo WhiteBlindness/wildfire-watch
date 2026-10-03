@@ -4,12 +4,12 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Map, { AttributionControl, Layer, ScaleControl, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import type { FilterSpecification, GeoJSONSource, Map as MapLibreMap, MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { FireSelection, WildfireEvent } from "@/lib/wildfire/types";
-import { eventsToClusterSelection, eventToSelection } from "@/lib/wildfire/selection";
-import { eventsToTemporalMarkerGeoJSON } from "@/lib/wildfire/temporal";
-import { eventsToViirsPixelGeoJSON, pointsToViirsPixelGeoJSON } from "@/lib/wildfire/viirs";
+import type { DetectionSelection, ThermalDetection } from "@/lib/wildfire/types";
+import { detectionToSelection, detectionsToClusterSelection } from "@/lib/wildfire/selection";
+import { detectionsToTemporalMarkerGeoJSON } from "@/lib/wildfire/temporal";
+import { detectionsToFootprintSources, pointsToViirsPixelGeoJSON } from "@/lib/wildfire/viirs";
 import { fetchFireDetailPoints } from "@/lib/wildfire/firms-adapter";
-import { SEVERITY_COLOR } from "@/lib/wildfire/colors";
+import { INTENSITY_BAND_COLOR } from "@/lib/wildfire/colors";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
 import {
   getBackdropColor,
@@ -18,20 +18,27 @@ import {
   getWaterColorOverrides,
   observeStyleReady,
   computeDetailCameraTarget,
+  withCartoKey,
 } from "./mapPresentation";
 import { syncSatelliteLayers } from "./satelliteLayers";
 import { EMPTY_DETAIL_STATE, detailStateForSelection, withDetailPoints, type DetailState } from "./detailState";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
-// Free, no-API-key vector basemaps from CARTO — dark-matter fits the cinematic
-// dark theme, positron is the light-mode counterpart. Attribution is baked
-// into the style JSON already.
+// Inlined at build time; absent in local and test builds, where requests go out unchanged.
+const CARTO_API_KEY = process.env.NEXT_PUBLIC_CARTO_API_KEY;
+
+function addCartoKey(url: string): { url: string } {
+  return { url: withCartoKey(url, CARTO_API_KEY) };
+}
+
+// CARTO vector basemaps: dark-matter for the dark theme, positron for light.
+// Attribution is part of the style JSON.
 const MARKER_LAYER_ID = "fire-markers";
 const MARKER_HIT_AREA_LAYER_ID = "fire-marker-hit-area";
-const CLUSTER_LAYER_ID = "major-fire-events";
-const CLUSTER_GLOW_LAYER_ID = "major-fire-events-glow";
-const CLUSTER_HIT_AREA_LAYER_ID = "major-fire-events-hit-area";
-const CLUSTER_COUNT_LAYER_ID = "major-fire-events-count";
+const CLUSTER_LAYER_ID = "detection-clusters";
+const CLUSTER_GLOW_LAYER_ID = "detection-clusters-glow";
+const CLUSTER_HIT_AREA_LAYER_ID = "detection-clusters-hit-area";
+const CLUSTER_COUNT_LAYER_ID = "detection-clusters-count";
 const MARKER_SOURCE_ID = "fire-markers-src";
 const SELECTED_PIXEL_SOURCE_ID = "selected-viirs-pixels-src";
 const SELECTED_PIXEL_FILL_LAYER_ID = "selected-viirs-pixels-fill";
@@ -133,7 +140,7 @@ function getUnselectedMarkerFilter(selectedEventIds: readonly string[]): FilterS
   return [
     "all",
     ["!", ["has", "point_count"]],
-    ["!", ["in", ["get", "fireId"], ["literal", [...selectedEventIds]]]],
+    ["!", ["in", ["get", "detectionId"], ["literal", [...selectedEventIds]]]],
   ];
 }
 
@@ -177,20 +184,20 @@ function writeMapCameraState(
 }
 
 /**
- * Derives a detail fetch bbox from the events that belong to the selection.
- * For clusters the bbox spans the actual event coordinates plus a margin;
+ * Derives a detail fetch bbox from the detections that belong to the selection.
+ * For clusters the bbox spans the actual detection coordinates plus a margin;
  * for single-point selections a minimum half-span is enforced so the box is
  * never degenerate. All values are clamped to valid WGS-84 ranges and the
  * maximum span is kept under the route's 5° cap.
  */
 function buildDetailBbox(
   selectedEventIds: readonly string[],
-  allEvents: WildfireEvent[],
+  allDetections: ThermalDetection[],
 ): [number, number, number, number] {
   const selectedIds = new Set(selectedEventIds);
-  const coords = allEvents
-    .filter((event) => selectedIds.has(event.id))
-    .map((event) => ({ lng: event.location.lng, lat: event.location.lat }));
+  const coords = allDetections
+    .filter((detection) => selectedIds.has(detection.id))
+    .map((detection) => ({ lng: detection.location.lng, lat: detection.location.lat }));
 
   const lngs = coords.map((c) => c.lng);
   const lats = coords.map((c) => c.lat);
@@ -222,10 +229,12 @@ function buildDetailBbox(
 }
 
 interface FireMapProps {
-  events: WildfireEvent[];
-  perimeterEvents: WildfireEvent[];
-  selectedFire: FireSelection | null;
-  onSelect: (selection: FireSelection | null) => void;
+  /** Detections in the current scope (country filter applied). */
+  detections: ThermalDetection[];
+  /** The whole snapshot, used for selection geometry outside the current scope. */
+  allDetections: ThermalDetection[];
+  selection: DetectionSelection | null;
+  onSelect: (selection: DetectionSelection | null) => void;
   onMapLoad: () => void;
   theme: "dark" | "light";
   basemapMode: BasemapMode;
@@ -233,7 +242,7 @@ interface FireMapProps {
   timelineHour: number;
 }
 
-export default function FireMap({ events, perimeterEvents, selectedFire, onSelect, onMapLoad, theme, basemapMode, countryScope, timelineHour }: FireMapProps) {
+export default function FireMap({ detections, allDetections, selection, onSelect, onMapLoad, theme, basemapMode, countryScope, timelineHour }: FireMapProps) {
   const mapRef = useRef<MapRef>(null);
   const hasReportedMapLoadRef = useRef(false);
   const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
@@ -267,16 +276,16 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   // intention, so the subsequent fit should still run).
   const userPannedAwayRef = useRef(false);
 
-  const selectedFireEventIds = selectedFire?.eventIds;
+  const selectedDetectionIds = selection?.detectionIds;
 
   // Low-resolution fallback pixel data derived from the globally-downsampled
-  // perimeterEvents snapshot. Shown immediately on selection and kept as a
-  // fallback if the full-resolution fetch fails.
+  // snapshot. Shown immediately on selection and kept as a fallback if the
+  // full-resolution fetch fails.
   const lowResPixelData = useMemo(
-    () => selectedFireEventIds
-      ? eventsToViirsPixelGeoJSON(perimeterEvents, selectedFireEventIds)
+    () => selectedDetectionIds
+      ? pointsToViirsPixelGeoJSON(detectionsToFootprintSources(allDetections, new Set(selectedDetectionIds)))
       : { type: "FeatureCollection" as const, features: [] },
-    [perimeterEvents, selectedFireEventIds],
+    [allDetections, selectedDetectionIds],
   );
 
   // Above the handover zoom the mosaic must stand on its own, because the
@@ -291,21 +300,14 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     () => {
       if (!mosaicBounds) return { type: "FeatureCollection" as const, features: [] };
       const [west, south, east, north] = mosaicBounds;
-      return pointsToViirsPixelGeoJSON(events
-        .filter((event) => {
-          const { lng, lat } = event.location;
-          return lng >= west && lng <= east && lat >= south && lat <= north;
-        })
-        .map((event) => ({
-          id: event.id,
-          lat: event.location.lat,
-          lng: event.location.lng,
-          frpMw: event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 0,
-          confidencePct: event.satelliteDetection?.confidencePct ?? 0,
-          detectedAt: event.satelliteDetection?.detectedAt ?? event.startedAt,
-        })));
+      // Each detection keeps its measured pixel size, so edge-of-swath
+      // detections are drawn at their real width rather than the nadir 375 m.
+      return pointsToViirsPixelGeoJSON(detectionsToFootprintSources(detections.filter((detection) => {
+        const { lng, lat } = detection.location;
+        return lng >= west && lng <= east && lat >= south && lat <= north;
+      })));
     },
-    [events, mosaicBounds],
+    [detections, mosaicBounds],
   );
 
   // Full-resolution pixel data fetched from /api/fires/detail, keyed by the
@@ -316,7 +318,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   // render, so an A→B switch never draws A's mosaic at B's location — not even
   // for the one frame an effect-based reset would allow. This is React's
   // "adjust state when a prop changes" pattern; it settles in one extra render.
-  const currentDetailState = detailStateForSelection(detailState, selectedFire?.id ?? null);
+  const currentDetailState = detailStateForSelection(detailState, selection?.id ?? null);
   if (currentDetailState !== detailState) setDetailState(currentDetailState);
   const detailPoints = currentDetailState.points;
 
@@ -331,13 +333,13 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
   const selectedPixelData = detailPixelData
     ?? (lowResPixelData.features.length > 0 ? lowResPixelData : snapshotPixelData);
 
-  const markerData = useMemo(() => eventsToTemporalMarkerGeoJSON(events, timelineHour), [events, timelineHour]);
+  const markerData = useMemo(() => detectionsToTemporalMarkerGeoJSON(detections, timelineHour), [detections, timelineHour]);
 
-  const eventById = useMemo(() => new globalThis.Map(events.map((event) => [event.id, event])), [events]);
+  const detectionById = useMemo(() => new globalThis.Map(detections.map((detection) => [detection.id, detection])), [detections]);
   const mapStyleUrl = getMapStyleUrl(theme, basemapMode);
 
   // Fetch full-resolution VIIRS detections whenever the selection changes.
-  // Keyed on selectedFire.id so stable references don't trigger spurious
+  // Keyed on selection.id so stable references don't trigger spurious
   // re-fetches when the parent re-renders with the same selection identity.
   useEffect(() => {
     // The previous selection's dense pixels were already dropped during render
@@ -346,13 +348,13 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     // when the data arrives.
     userPannedAwayRef.current = false;
 
-    if (!selectedFire || !selectedFireEventIds || selectedFireEventIds.length === 0) return;
+    if (!selection || !selectedDetectionIds || selectedDetectionIds.length === 0) return;
 
-    const selectionId = selectedFire.id;
+    const selectionId = selection.id;
     const fetchId = ++detailFetchCounterRef.current;
     const controller = new AbortController();
 
-    const bbox = buildDetailBbox(selectedFireEventIds, [...perimeterEvents, ...events]);
+    const bbox = buildDetailBbox(selectedDetectionIds, allDetections);
 
     // Anchor the fetch window to the fire's own detection time so stale
     // snapshot fires (whose detections may be days or weeks in the past) are
@@ -372,7 +374,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     //     snapshot generatedAt > wall clock) → omit start; rolling window is
     //     safer than a 400 from the route.
     const detailStart = ((): string | undefined => {
-      const raw = selectedFire.detectedAt;
+      const raw = selection.lastAcquiredAt;
       if (!raw) return undefined;
       const detectedMs = new Date(raw).getTime();
       if (!Number.isFinite(detectedMs)) return undefined;
@@ -408,11 +410,11 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
       // two concurrent fetches racing to set state.
       controller.abort();
     };
-    // Intentionally omit perimeterEvents and events from deps — the bbox
+    // Intentionally omit the detection arrays from deps — the bbox
     // snapshot is computed once per selection identity and updated only when
     // the fire changes, matching the user's expected interaction model.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFire?.id]);
+  }, [selection?.id]);
 
   // Track when the user deliberately pans or zooms away after a selection.
   // MapLibre sets e.originalEvent only for genuine pointer/touch/wheel gestures
@@ -581,25 +583,24 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
           ]);
           if (selectionRequestRef.current !== requestId) return;
           const members = leaves
-            .map((leaf) => eventById.get(String(leaf.properties?.fireId)))
-            .filter((event): event is WildfireEvent => Boolean(event));
+            .map((leaf) => detectionById.get(String(leaf.properties?.detectionId)))
+            .filter((detection): detection is ThermalDetection => Boolean(detection));
           const [lng, lat] = feature.geometry.coordinates;
-          const selection = eventsToClusterSelection(members, clusterId, { lng, lat });
-          if (selection) {
-            onSelect(selection);
+          const clusterSelection = detectionsToClusterSelection(members, clusterId, { lng, lat });
+          if (clusterSelection) {
+            onSelect(clusterSelection);
             if (map) flyToLocation(map, { lng, lat }, Math.min(expansionZoom, FIRE_DETAIL_ZOOM), true);
           }
         } catch (error) {
-          console.error("Unable to inspect fire cluster", error);
+          console.error("Unable to inspect detection cluster", error);
         }
         return;
       }
 
-      const fireId = String(feature.properties?.fireId ?? "");
-      const event = eventById.get(fireId);
-      onSelect(event ? eventToSelection(event) : null);
+      const detection = detectionById.get(String(feature.properties?.detectionId ?? ""));
+      onSelect(detection ? detectionToSelection(detection) : null);
     },
-    [eventById, onSelect],
+    [detectionById, onSelect],
   );
 
   const handleMove = useCallback((e: MapLayerMouseEvent) => {
@@ -683,16 +684,16 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     const map = mapRef.current?.getMap();
     if (!map) return;
 
-    if (selectedFire?.kind === "cluster") return;
+    if (selection?.kind === "cluster") return;
     try {
-      if (selectedFire?.kind === "point") {
-        flyToLocation(map, selectedFire.location, FIRE_DETAIL_ZOOM, true);
-      } else if (countryScope !== "global" && events.length > 0) {
-        if (events.length === 1) {
-          flyToLocation(map, events[0].location, 7, true);
+      if (selection?.kind === "detection") {
+        flyToLocation(map, selection.location, FIRE_DETAIL_ZOOM, true);
+      } else if (countryScope !== "global" && detections.length > 0) {
+        if (detections.length === 1) {
+          flyToLocation(map, detections[0].location, 7, true);
         } else {
-          const lngs = events.map((event) => event.location.lng);
-          const lats = events.map((event) => event.location.lat);
+          const lngs = detections.map((detection) => detection.location.lng);
+          const lats = detections.map((detection) => detection.location.lat);
           const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
           const padding = getCameraPadding(true);
           writeMapCameraState(map, padding, "fitBounds");
@@ -712,7 +713,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
     } catch {
       // Stale/torn-down map instance — nothing to recover, just skip.
     }
-  }, [countryScope, events, selectedFire?.id, selectedFire?.kind, selectedFire?.location]);
+  }, [countryScope, detections, selection?.id, selection?.kind, selection?.location]);
 
   return (
     <div
@@ -738,6 +739,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
       cursor={isHoveringInteractiveFeature ? "pointer" : "grab"}
       attributionControl={false}
       locale={mapUiStrings}
+      transformRequest={addCartoKey}
       onLoad={handleLoad}
     >
       <AttributionControl key={basemapMode} compact position="bottom-left" />
@@ -869,7 +871,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
           id={MARKER_LAYER_ID}
           type="circle"
           maxzoom={VIIRS_MOSAIC_MIN_ZOOM}
-          filter={getUnselectedMarkerFilter(selectedFireEventIds ?? [])}
+          filter={getUnselectedMarkerFilter(selectedDetectionIds ?? [])}
           paint={{
             "circle-radius": [
               "*",
@@ -878,11 +880,11 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
             ],
             "circle-color": [
               "match",
-              ["get", "severity"],
-              "extreme", SEVERITY_COLOR.extreme,
-              "high", SEVERITY_COLOR.high,
-              "moderate", SEVERITY_COLOR.moderate,
-              SEVERITY_COLOR.low,
+              ["get", "intensityBand"],
+              "very_high", INTENSITY_BAND_COLOR.very_high,
+              "high", INTENSITY_BAND_COLOR.high,
+              "moderate", INTENSITY_BAND_COLOR.moderate,
+              INTENSITY_BAND_COLOR.low,
             ],
             "circle-stroke-width": 1.5,
             "circle-stroke-color": "#ffffff",
@@ -915,7 +917,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
               9-18     deep orange  17.3% (p77-p95) — intense cores
               18-50    red-orange    4.7% (p95-p99) — exceptional pixels
               50-150   red           0.8% (p99-p100)— rare extremes
-              150+     deep red      ~0%             — catastrophic events
+              150+     deep red      ~0%             — the strongest detections
             No hard steps — all transitions are linearly interpolated.
             fill-antialias: false keeps pixel edges crisp (no sub-pixel AA
             bleeding between ~6 px squares). */}
@@ -934,7 +936,7 @@ export default function FireMap({ events, perimeterEvents, selectedFire, onSelec
               9,   "#ea580c",   // deep orange — intense cores (p77-p95)
               18,  "#dc2626",   // red-orange — only at p95+ (18 MW)
               50,  "#b91c1c",   // red — rare extremes, p99+
-              150, "#991b1b",   // deep red — catastrophic events only
+              150, "#991b1b",   // deep red — the strongest detections only
             ],
             "fill-opacity": 0.9,
             "fill-antialias": false,
