@@ -1,6 +1,5 @@
 import { bbox, bboxPolygon, buffer, point } from "@turf/turf";
-import type { CachedFirmsPoint } from "./firms-cache";
-import type { HeatmapPoint, WildfireEvent } from "./types";
+import type { ThermalDetection } from "./types";
 
 /** Native VIIRS 375 m nominal ground sampling distance at nadir. */
 export const VIIRS_PIXEL_SIDE_METERS = 375;
@@ -24,8 +23,7 @@ const MAX_MAPLIBRE_LATITUDE = 85.0511287798066;
 // The fix: snap every detection onto a fixed global 375 m ground grid and
 // deduplicate into one cell per grid cell. Within a cell, we keep the maximum
 // observed FRP (the most intense fire radiative power measurement dominates
-// the burn-scar colour) plus the most recent detectedAt and the highest
-// confidencePct. The rendered square is emitted at the CELL CENTRE — not at
+// the burn-scar colour) plus the most recent detectedAt. The rendered square is emitted at the CELL CENTRE — not at
 // any raw detection coordinate — so adjacent cells share an edge exactly and
 // the mosaic tessellates cleanly into the burn-scar pattern the NASA-FIRMS
 // reference shows.
@@ -81,12 +79,28 @@ function snapToGrid(lat: number, lng: number): {
 }
 
 type PixelProperties = {
-  fireId: string;
+  detectionId: string;
   frp: number;
   frpMw: number;
   detectedAt: string;
-  confidencePct: number;
 };
+
+/**
+ * What a footprint needs from a detection. Matches both the cached FIRMS point
+ * returned by /api/fires/detail and the shape produced from snapshot
+ * detections by detectionsToFootprintSources.
+ */
+export interface FootprintSource {
+  id: string;
+  lat: number;
+  lng: number;
+  frpMw: number;
+  detectedAt: string;
+  /** Along-scan pixel size in km, when the source reports it. */
+  scanKm?: number;
+  /** Along-track pixel size in km, when the source reports it. */
+  trackKm?: number;
+}
 
 type PixelGeometry = GeoJSON.Polygon | GeoJSON.MultiPolygon;
 
@@ -102,22 +116,6 @@ function isValidCoordinate(coord: GeoCoordinate): boolean {
     && coord.lng <= 180
     && coord.lat >= -MAX_MAPLIBRE_LATITUDE
     && coord.lat <= MAX_MAPLIBRE_LATITUDE;
-}
-
-function isValidHeatmapPoint(rawPoint: HeatmapPoint): boolean {
-  return isValidCoordinate(rawPoint);
-}
-
-function getFireFrpMw(event: WildfireEvent, rawPoint: HeatmapPoint): number {
-  const measuredFrp = event.satelliteDetection?.frpMw ?? event.maxFrpMw;
-  if (typeof measuredFrp === "number" && Number.isFinite(measuredFrp)) {
-    return Math.max(0, measuredFrp);
-  }
-
-  // Mock/derived records may only carry normalized intensity. Keep a stable
-  // visual fallback while real FIRMS records always use measured FRP above.
-  const fallbackIntensity = Number.isFinite(rawPoint.intensity) ? rawPoint.intensity : 0;
-  return Math.max(0, fallbackIntensity * 200);
 }
 
 function splitAntimeridianBounds(bounds: GeoJSON.BBox): GeoJSON.MultiPolygon {
@@ -209,39 +207,25 @@ function makePixelPolygon(
 }
 
 /**
- * Converts the selected incident's raw thermal detections into native-sized
- * VIIRS footprints. The source stays empty until a selection exists so the
- * global map keeps its lightweight clustered point presentation.
+ * Detections as footprint sources, carrying each detection's measured pixel
+ * size so edge-of-swath detections are drawn at their real width. Pass `ids`
+ * to keep only a selection.
  */
-export function eventsToViirsPixelGeoJSON(
-  events: WildfireEvent[],
-  selectedEventIds: readonly string[],
-): GeoJSON.FeatureCollection<PixelGeometry, PixelProperties> {
-  const selectedIds = new Set(selectedEventIds);
-  if (selectedIds.size === 0) return { type: "FeatureCollection", features: [] };
-
-  const features = events.flatMap<GeoJSON.Feature<PixelGeometry, PixelProperties>>((event) => {
-    if (!selectedIds.has(event.id)) return [];
-
-    return event.heatmapPoints
-      .filter(isValidHeatmapPoint)
-      .map((rawPoint) => {
-        const frpMw = getFireFrpMw(event, rawPoint);
-        return {
-          type: "Feature",
-          geometry: makePixelPolygon(rawPoint),
-          properties: {
-            fireId: event.id,
-            frp: frpMw,
-            frpMw,
-            detectedAt: rawPoint.detectedAt,
-            confidencePct: event.satelliteDetection?.confidencePct ?? 0,
-          },
-        };
-      });
+export function detectionsToFootprintSources(
+  detections: readonly ThermalDetection[],
+  ids?: ReadonlySet<string>,
+): FootprintSource[] {
+  return detections.flatMap((detection) => {
+    if (ids && !ids.has(detection.id)) return [];
+    return [{
+      id: detection.id,
+      lat: detection.location.lat,
+      lng: detection.location.lng,
+      frpMw: detection.frpMw,
+      detectedAt: detection.acquiredAt,
+      ...(detection.pixelKm ? { scanKm: detection.pixelKm.scan, trackKm: detection.pixelKm.track } : {}),
+    }];
   });
-
-  return { type: "FeatureCollection", features };
 }
 
 /**
@@ -253,9 +237,8 @@ export function eventsToViirsPixelGeoJSON(
  * raw detections (from different satellite overpasses) fall in the same 375 m
  * cell, they are collapsed into a single feature whose properties are:
  *   - frpMw        → maximum of all detection FRP values
- *   - confidencePct → maximum of all detection confidence values
  *   - detectedAt   → the most recent detection timestamp in the cell
- *   - fireId       → the id of the detection with the maximum FRP
+ *   - detectionId  → the id of the detection with the maximum FRP
  *   - scanHalfM    → half the along-scan (E-W) extent of the max-FRP detection
  *   - trackHalfM   → half the along-track (N-S) extent of the max-FRP detection
  *
@@ -278,19 +261,18 @@ export function eventsToViirsPixelGeoJSON(
  * correct because the actual ground footprints overlap at swath edge.
  *
  * Points outside MapLibre's representable latitude range are silently dropped,
- * matching the behaviour of eventsToViirsPixelGeoJSON.
+ * because MapLibre cannot draw them.
  */
 export function pointsToViirsPixelGeoJSON(
-  points: readonly CachedFirmsPoint[],
+  points: readonly FootprintSource[],
 ): GeoJSON.FeatureCollection<PixelGeometry, PixelProperties> {
   // Step 1: snap every valid detection onto the fixed 375 m ground grid and
   // accumulate per-cell aggregates.  The Map key is "rowIndex:colIndex".
   type CellAggregate = {
     cellCentLat: number;
     cellCentLng: number;
-    fireId: string;
+    detectionId: string;
     frpMw: number;
-    confidencePct: number;
     detectedAt: string;
     /** Half-extents for the drawn footprint, in metres. Set from the max-FRP detection. */
     scanHalfM: number;
@@ -319,24 +301,22 @@ export function pointsToViirsPixelGeoJSON(
       cells.set(key, {
         cellCentLat,
         cellCentLng,
-        fireId: p.id,
+        detectionId: p.id,
         frpMw: p.frpMw,
-        confidencePct: p.confidencePct,
         detectedAt: p.detectedAt,
         scanHalfM,
         trackHalfM,
       });
     } else {
-      // Keep the most intense FRP, highest confidence, and latest timestamp.
+      // Keep the most intense FRP and the latest timestamp.
       // Adopt the pixel dimensions of whichever detection has the maximum FRP
       // (the dominant detection determines the drawn footprint size).
       if (p.frpMw > existing.frpMw) {
         existing.frpMw = p.frpMw;
-        existing.fireId = p.id;
+        existing.detectionId = p.id;
         existing.scanHalfM = scanHalfM;
         existing.trackHalfM = trackHalfM;
       }
-      if (p.confidencePct > existing.confidencePct) existing.confidencePct = p.confidencePct;
       if (p.detectedAt > existing.detectedAt) existing.detectedAt = p.detectedAt;
     }
   }
@@ -354,11 +334,10 @@ export function pointsToViirsPixelGeoJSON(
       cell.trackHalfM,
     ),
     properties: {
-      fireId: cell.fireId,
+      detectionId: cell.detectionId,
       frp: cell.frpMw,
       frpMw: cell.frpMw,
       detectedAt: cell.detectedAt,
-      confidencePct: cell.confidencePct,
     },
   }));
 

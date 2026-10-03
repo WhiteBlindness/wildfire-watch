@@ -1,58 +1,52 @@
-import type { FireSelection, GeoPoint, WildfireEvent } from "./types";
+import type { DetectionSelection, GeoPoint, ThermalDetection } from "./types";
 
-function validTime(value: string): number {
-  const parsed = Date.parse(value);
+function acquiredMs(detection: ThermalDetection): number {
+  const parsed = Date.parse(detection.acquiredAt);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function eventToSelection(event: WildfireEvent): FireSelection {
-  const detection = event.satelliteDetection;
+export function detectionToSelection(detection: ThermalDetection): DetectionSelection {
   return {
-    kind: "point",
-    id: event.id,
-    name: event.name,
-    location: event.location,
-    country: event.country,
-    region: event.region,
-    eventIds: [event.id],
+    kind: "detection",
+    id: detection.id,
+    location: detection.location,
+    country: detection.country,
+    detectionIds: [detection.id],
     detectionCount: 1,
-    totalFrpMw: detection?.frpMw ?? event.maxFrpMw ?? 0,
-    confidencePct: detection?.confidencePct ?? null,
-    startedAt: event.startedAt,
-    detectedAt: detection?.detectedAt ?? event.lastUpdated,
+    totalFrpMw: detection.frpMw,
+    confidence: detection.confidence,
+    firstAcquiredAt: detection.acquiredAt,
+    lastAcquiredAt: detection.acquiredAt,
+    operationalStatus: "unknown",
   };
 }
 
-export function eventsToClusterSelection(
-  events: WildfireEvent[],
+/**
+ * A MapLibre cluster groups detections that are close on screen at the current
+ * zoom. It is a display grouping, not an incident: the selection says how many
+ * detections it holds and never claims an operational status.
+ */
+export function detectionsToClusterSelection(
+  detections: ThermalDetection[],
   clusterId: number,
   location: GeoPoint,
-): FireSelection | null {
-  if (events.length === 0) return null;
+): DetectionSelection | null {
+  if (detections.length === 0) return null;
 
-  const sortedByStart = [...events].sort((a, b) => validTime(a.startedAt) - validTime(b.startedAt));
-  const sortedByDetection = [...events].sort((a, b) => (
-    validTime(b.satelliteDetection?.detectedAt ?? b.lastUpdated)
-      - validTime(a.satelliteDetection?.detectedAt ?? a.lastUpdated)
-  ));
-  const countries = [...new Set(events.map((event) => event.country))];
-  const regions = [...new Set(events.map((event) => event.region))];
+  const byTime = [...detections].sort((a, b) => acquiredMs(a) - acquiredMs(b));
+  const countries = new Set(detections.map((detection) => detection.country));
 
   return {
     kind: "cluster",
     id: `cluster-${clusterId}`,
-    name: "Detection cluster",
     location,
-    country: countries.length === 1 ? countries[0] : events[0].country,
-    region: regions.length === 1 ? regions[0] : events[0].region,
-    eventIds: events.map((event) => event.id),
-    detectionCount: events.length,
-    totalFrpMw: events.reduce(
-      (sum, event) => sum + (event.satelliteDetection?.frpMw ?? event.maxFrpMw ?? 0),
-      0,
-    ),
-    confidencePct: null,
-    startedAt: sortedByStart[0].startedAt,
-    detectedAt: sortedByDetection[0].satelliteDetection?.detectedAt ?? sortedByDetection[0].lastUpdated,
+    country: countries.size === 1 ? detections[0].country : null,
+    detectionIds: detections.map((detection) => detection.id),
+    detectionCount: detections.length,
+    totalFrpMw: detections.reduce((sum, detection) => sum + detection.frpMw, 0),
+    confidence: null,
+    firstAcquiredAt: byTime[0].acquiredAt,
+    lastAcquiredAt: byTime[byTime.length - 1].acquiredAt,
+    operationalStatus: "unknown",
   };
 }

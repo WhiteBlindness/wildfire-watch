@@ -7,14 +7,14 @@ import TopBar from "@/components/layout/TopBar";
 import Legend from "@/components/map/Legend";
 import MapLoadingState from "@/components/map/MapLoadingState";
 import SidePanel from "@/components/panel/SidePanel";
-import { firmsAdapter } from "@/lib/wildfire/firms-adapter";
-import { eventToSelection } from "@/lib/wildfire/selection";
+import { fetchDetectionSnapshot } from "@/lib/wildfire/firms-adapter";
+import { detectionToSelection } from "@/lib/wildfire/selection";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import type {
+  DetectionFeedSnapshot,
+  DetectionSelection,
   FeedLoadStatus,
-  FireSelection,
-  WildfireEvent,
-  WildfireFeedSnapshot,
+  ThermalDetection,
 } from "@/lib/wildfire/types";
 import type { BasemapMode } from "@/components/ui/BasemapToggle";
 import GlobalTimelineControl from "@/components/map/GlobalTimelineControl";
@@ -27,24 +27,27 @@ const FireMap = dynamic(() => import("@/components/map/FireMap"), {
   loading: () => <MapLoadingState announce={false} />,
 });
 
-interface HomeClientProps {
-  feedSnapshot?: WildfireFeedSnapshot;
-}
+/**
+ * The ingest refreshes hourly. Re-reading the snapshot keeps a long-open tab
+ * honest: it picks up new data instead of ageing into "stale" while a fresher
+ * snapshot already exists. Hidden tabs skip the refresh.
+ */
+const FEED_REFRESH_INTERVAL_MS = 10 * 60 * 1_000;
 
-export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClientProps) {
+export default function HomeClient() {
   const { resolvedTheme } = useTheme();
   const { t } = useLocale();
-  const [feedSnapshot, setFeedSnapshot] = useState<WildfireFeedSnapshot | null>(initialSnapshot ?? null);
-  const [feedState, setFeedState] = useState<FeedLoadStatus>(initialSnapshot ? "ready" : "loading");
-  const events = useMemo(() => feedSnapshot?.events ?? [], [feedSnapshot]);
+  const [feedSnapshot, setFeedSnapshot] = useState<DetectionFeedSnapshot | null>(null);
+  const [feedState, setFeedState] = useState<FeedLoadStatus>("loading");
+  const detections = useMemo(() => feedSnapshot?.detections ?? [], [feedSnapshot]);
   const [feedRetryNonce, setFeedRetryNonce] = useState(0);
   const [isMapReady, setIsMapReady] = useState(false);
-  const [selectedFire, setSelectedFire] = useState<FireSelection | null>(null);
+  const [selection, setSelection] = useState<DetectionSelection | null>(null);
   const [isPanelMinimized, setIsPanelMinimized] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState("global");
   const [basemapMode, setBasemapMode] = useState<BasemapMode>("satellite");
-  // Start at the right edge of the slider so every currently active global
-  // hotspot is visible before the visitor opts into historical playback.
+  // Start at the right edge of the slider so every detection in the snapshot
+  // is visible before the visitor opts into historical playback.
   const [timelineHour, setTimelineHour] = useState(GLOBAL_TIMELINE_NOW);
   const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
 
@@ -56,43 +59,55 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
     return () => window.clearInterval(timer);
   }, [isTimelinePlaying]);
 
-  // The page request remains tiny: hotspot data arrives from the Worker KV
-  // endpoint after hydration. NASA is only contacted by the hourly ingestor.
+  // The page request remains tiny: detections arrive from the Worker KV
+  // endpoint after hydration. NASA is only contacted by the hourly ingest.
   useEffect(() => {
     let cancelled = false;
+    let controller: AbortController | null = null;
 
-    firmsAdapter.getSnapshot().then((snapshot) => {
-      if (cancelled) return;
-      setFeedSnapshot(snapshot);
-      setFeedState("ready");
-    }).catch((error: unknown) => {
-      if (cancelled) return;
-      console.error("Unable to load cached FIRMS hotspots", error);
-      // Preserve any last-known snapshot so the overview can call it out as
-      // stale rather than silently replacing it with an empty state.
-      setFeedState("error");
-    });
+    const load = (): void => {
+      controller?.abort();
+      controller = new AbortController();
+      fetchDetectionSnapshot(controller.signal).then((snapshot) => {
+        if (cancelled) return;
+        setFeedSnapshot(snapshot);
+        setFeedState("ready");
+      }).catch((error: unknown) => {
+        if (cancelled || (error instanceof DOMException && error.name === "AbortError")) return;
+        console.error("Unable to load the detection snapshot", error);
+        // Keep the last snapshot: the overview reports it as degraded or
+        // stale instead of replacing it with an empty map.
+        setFeedState("error");
+      });
+    };
+
+    load();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, FEED_REFRESH_INTERVAL_MS);
     return () => {
       cancelled = true;
+      controller?.abort();
+      window.clearInterval(timer);
     };
   }, [feedRetryNonce]);
 
   const countries = useMemo(
-    () => [...new Set(events
-      .map((event) => event.country)
-      .filter((country) => country && !country.includes("unmatched")))]
+    () => [...new Set(detections
+      .map((detection) => detection.country)
+      .filter((country): country is string => country !== null))]
       .sort((a, b) => a.localeCompare(b, "pt")),
-    [events],
+    [detections],
   );
-  const filteredEvents = useMemo(
+  const scopedDetections = useMemo(
     () => selectedCountry === "global"
-      ? events
-      : events.filter((event) => event.country === selectedCountry),
-    [events, selectedCountry],
+      ? detections
+      : detections.filter((detection) => detection.country === selectedCountry),
+    [detections, selectedCountry],
   );
   const mapTheme = resolvedTheme === "light" ? "light" : "dark";
   const isInitialLoading = !isMapReady || (feedState === "loading" && !feedSnapshot);
-  const panelState = selectedFire
+  const panelState = selection
     ? "detail-expanded"
     : isPanelMinimized
       ? "minimized"
@@ -102,19 +117,19 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
     setIsMapReady(true);
   }, []);
 
-  function handleMapSelect(selection: FireSelection | null): void {
-    setSelectedFire(selection);
-    if (selection) setIsPanelMinimized(false);
+  function handleMapSelect(next: DetectionSelection | null): void {
+    setSelection(next);
+    if (next) setIsPanelMinimized(false);
   }
 
   // Keyboard and screen-reader route to a detection that bypasses the canvas.
-  function handleEventSelect(event: WildfireEvent): void {
-    handleMapSelect(eventToSelection(event));
+  function handleDetectionSelect(detection: ThermalDetection): void {
+    handleMapSelect(detectionToSelection(detection));
   }
 
   function handleCountryChange(country: string): void {
     setSelectedCountry(country);
-    setSelectedFire(null);
+    setSelection(null);
     setIsPanelMinimized(false);
   }
 
@@ -126,9 +141,9 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
   return (
     <main
       className="wildfire-watch relative h-dvh w-full overflow-hidden"
-      data-map-panel-open={selectedFire || !isPanelMinimized ? "true" : "false"}
+      data-map-panel-open={selection || !isPanelMinimized ? "true" : "false"}
       data-map-panel-state={panelState}
-      data-map-panel-view={selectedFire ? "detail" : "global"}
+      data-map-panel-view={selection ? "detail" : "global"}
       data-map-panel-minimized={isPanelMinimized ? "true" : "false"}
       data-basemap-mode={basemapMode}
     >
@@ -143,9 +158,9 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
           measure the viewport and finish style work while data is pending. */}
       <div className={`wildfire-watch-map absolute inset-0 z-0 transition-opacity duration-[400ms] motion-reduce:duration-0 ${isInitialLoading ? "opacity-0" : "opacity-100"}`}>
         <FireMap
-          events={filteredEvents}
-          perimeterEvents={events}
-          selectedFire={selectedFire}
+          detections={scopedDetections}
+          allDetections={detections}
+          selection={selection}
           onSelect={handleMapSelect}
           onMapLoad={handleMapLoad}
           theme={mapTheme}
@@ -179,15 +194,15 @@ export default function HomeClient({ feedSnapshot: initialSnapshot }: HomeClient
       </div>
 
       <SidePanel
-        events={filteredEvents}
-        selectedFire={selectedFire}
+        detections={scopedDetections}
+        selection={selection}
         isMinimized={isPanelMinimized}
         onClose={() => handleMapSelect(null)}
         onToggleMinimized={() => setIsPanelMinimized((current) => !current)}
         countries={countries}
         selectedCountry={selectedCountry}
         onCountryChange={handleCountryChange}
-        onSelectEvent={handleEventSelect}
+        onSelectDetection={handleDetectionSelect}
         feedSnapshot={feedSnapshot}
         feedState={feedState}
       />

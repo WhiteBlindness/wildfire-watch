@@ -1,6 +1,8 @@
-import { cachedPointToEvent, isGlobalFirmsCachePayload } from "./firms-cache";
+import { isGlobalFirmsCachePayload } from "./firms-cache";
 import type { CachedFirmsPoint } from "./firms-cache";
-import type { WildfireDataAdapter, WildfireEvent, WildfireFeedSnapshot } from "./types";
+import { cachedPointToDetection, firmsSnapshotProvenance } from "./firms-dataset";
+import { parseIngestHealth } from "./ingest-health";
+import type { DetectionFeedSnapshot } from "./types";
 
 interface FireDetailPayload {
   version: 1;
@@ -22,12 +24,13 @@ function isFireDetailPayload(value: unknown): value is FireDetailPayload {
     && Array.isArray(candidate.points);
 }
 
-let cachedSnapshot: WildfireFeedSnapshot | null = null;
-
-async function fetchCachedSnapshot(): Promise<WildfireFeedSnapshot> {
-  if (cachedSnapshot) return cachedSnapshot;
-
-  const response = await fetch("/api/fires", { cache: "no-store" });
+/**
+ * Reads the detection snapshot from the Worker. NASA is never contacted from
+ * the browser or from a page request: the scheduled ingest writes the snapshot
+ * to KV and /api/fires serves it with the latest ingest health attached.
+ */
+export async function fetchDetectionSnapshot(signal?: AbortSignal): Promise<DetectionFeedSnapshot> {
+  const response = await fetch("/api/fires", { cache: "no-store", signal });
   if (!response.ok) throw new Error(`Fire cache request failed: ${response.status}`);
 
   const payload: unknown = await response.json();
@@ -35,27 +38,13 @@ async function fetchCachedSnapshot(): Promise<WildfireFeedSnapshot> {
     throw new Error("Fire cache returned an invalid or incomplete worldwide payload");
   }
 
-  cachedSnapshot = {
-    events: payload.points.map((point) => cachedPointToEvent(point, payload.generatedAt)),
-    sourceId: payload.source,
-    sourceLabel: "NASA FIRMS Satellite Telemetry",
-    generatedAt: payload.generatedAt,
+  const ingest = parseIngestHealth((payload as { ingestHealth?: unknown }).ingestHealth);
+  return {
+    detections: payload.points.map(cachedPointToDetection),
+    provenance: firmsSnapshotProvenance(payload, ingest),
+    ingest,
   };
-  return cachedSnapshot;
 }
-
-/** The app adapter reads only the Worker KV endpoint; NASA is never contacted
- * from the browser or from a page request. */
-export const firmsAdapter: WildfireDataAdapter = {
-  getSnapshot: fetchCachedSnapshot,
-  async listEvents(): Promise<WildfireEvent[]> {
-    return (await fetchCachedSnapshot()).events;
-  },
-  async getEvent(id: string): Promise<WildfireEvent | null> {
-    const snapshot = await fetchCachedSnapshot();
-    return snapshot.events.find((event) => event.id === id) ?? null;
-  },
-};
 
 export interface FetchFireDetailOptions {
   /** Number of days of NRT data to request (1–10). Defaults to 3 when absent. */

@@ -4,14 +4,33 @@
 // @ts-ignore generated deployment artifact
 import openNextWorker from "../.open-next/worker.js";
 import { refreshFirmsCache, type FirmsIngestEnv } from "./firms-ingest";
+import { createAlertChannels, type AlertChannelEnv } from "../src/lib/monitoring/alert-channels";
 
-interface AppEnv extends FirmsIngestEnv {
+interface AppEnv extends FirmsIngestEnv, AlertChannelEnv {
   ASSETS: unknown;
-  DATA_SOURCE: string;
 }
 
 interface WorkerExecutionContext {
   waitUntil(promise: Promise<unknown>): void;
+}
+
+async function scheduledRefresh(env: AppEnv): Promise<void> {
+  const report = await refreshFirmsCache(env, { channels: createAlertChannels(env) });
+  const { health } = report;
+  const summary = {
+    outcome: health.outcome,
+    errorCode: health.errorCode ?? null,
+    consecutiveFailures: health.consecutiveFailures,
+    sourceRows: health.sourceRows ?? null,
+    selectedPoints: health.selectedPoints ?? null,
+    alerts: report.alerts.map((alert) => alert.event),
+    deliveries: report.deliveries.map((delivery) => `${delivery.channel}:${delivery.delivered ? "ok" : delivery.detail}`),
+  };
+  if (health.outcome === "failure") {
+    console.error("FIRMS scheduled refresh failed; the last known-good snapshot was kept", summary);
+  } else {
+    console.log("FIRMS scheduled refresh succeeded", summary);
+  }
 }
 
 const appWorker = {
@@ -20,8 +39,9 @@ const appWorker = {
   },
 
   scheduled(_controller: unknown, env: AppEnv, ctx: WorkerExecutionContext): void {
-    ctx.waitUntil(refreshFirmsCache(env).catch((error: unknown) => {
-      console.error("FIRMS scheduled refresh failed; existing KV snapshot was preserved", error);
+    ctx.waitUntil(scheduledRefresh(env).catch((error: unknown) => {
+      // Only the error name: messages from fetch failures can include the FIRMS URL and key.
+      console.error("FIRMS scheduled refresh crashed", error instanceof Error ? error.name : "unknown");
     }));
   },
 };
