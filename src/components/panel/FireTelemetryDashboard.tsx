@@ -381,10 +381,11 @@ function NewsMessage({ children }: { children: ReactNode }) {
 function WeatherStat({ detail, icon, label, value }: { detail?: string; icon: ReactNode; label: string; value: string }) {
   return (
     <div className="min-h-24 bg-surface/90 p-2.5">
-      <div className="flex items-center gap-1.5 text-foreground/65 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:stroke-[1.7]">
+      {/* The icon sits inside <dt>: a <dl> group may only contain dt and dd elements. */}
+      <dt className="flex items-center gap-1.5 text-[11px] font-semibold uppercase leading-tight tracking-[0.06em] text-foreground/65 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0 [&_svg]:stroke-[1.7]">
         {icon}
-        <dt className="text-[11px] font-semibold uppercase leading-tight tracking-[0.06em]">{label}</dt>
-      </div>
+        <span>{label}</span>
+      </dt>
       <dd className="mt-2 font-mono text-sm font-semibold tabular-nums text-foreground">
         {value}
         {detail && <span className="ml-1.5 text-[11px] font-normal text-foreground/65">{detail}</span>}

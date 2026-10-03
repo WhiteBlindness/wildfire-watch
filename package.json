@@ -13,6 +13,7 @@
     "test:static": "node --test tests/*.test.mjs",
     "test:language": "node --test tests/document-language.test.mjs",
     "test:compliance": "node --test tests/compliance.test.mjs",
+    "test:e2e": "playwright test",
     "build:cloudflare": "opennextjs-cloudflare build",
     "deploy:cloudflare": "opennextjs-cloudflare deploy",
     "preview": "npm run build:cloudflare && opennextjs-cloudflare preview",
@@ -40,7 +41,9 @@
     "world-atlas": "^2.0.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "@opennextjs/cloudflare": "^1.20.2",
+    "@playwright/test": "1.56.1",
     "@tailwindcss/postcss": "^4",
     "@types/d3-geo": "^3.1.1",
     "@types/node": "^20",
@@ -50,6 +53,7 @@
     "esbuild": "^0.25.4",
     "eslint": "^9",
     "eslint-config-next": "^16.3.8",
+    "playwright-core": "1.56.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "wrangler": "^4.114.0"
