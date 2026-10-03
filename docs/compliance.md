@@ -1,0 +1,81 @@
+# Legal, compliance and third-party review
+
+Engineering due diligence, not legal advice. It records what WildfireWatch does about each obligation that could plausibly apply, what was checked, and what is left for the owner to decide. It does not claim that the site is fully compliant with any law. Last reviewed on 03/10/2026.
+
+**Context.** WildfireWatch is a free, non-commercial personal portfolio project operated from Portugal. It has no accounts, forms, payments, reviews, advertising or analytics. It stores two interface preferences in the visitor's browser. It is hosted on Cloudflare Workers.
+
+## Compliance matrix
+
+| Item | Status | Evidence or reason |
+|---|---|---|
+| Colour contrast | IMPLEMENTED | Secondary text never below 60 % opacity (static test); axe finds no contrast violations in the overview, detail and legal views (E2E). |
+| Alt text / non-text content | IMPLEMENTED | Decorative SVGs are `aria-hidden` (static test). The map canvas is graphical; its accessible alternative is the panel's list of the strongest detections. |
+| Accessibility (WCAG 2.2 AA target) | IMPLEMENTED | Automated axe checks against WCAG 2.0–2.2 A/AA pass on three views (E2E). Automated checks do not cover everything; no full manual screen-reader audit has been done. |
+| Keyboard accessibility | IMPLEMENTED | Skip link to the panel, visible focus, keyboard selection of detections without the map (E2E). |
+| Clear button labels | IMPLEMENTED | Every control has an accessible name that includes its visible text (static test, axe). |
+| Privacy policy | IMPLEMENTED | `/privacidade` in PT and EN: controller, data, third parties, legal basis, storage, rights, CNPD complaint. The controller-identity question is below. |
+| Terms and conditions | IMPLEMENTED | `/termos`: nature of the information, acceptable use, intellectual property, liability. |
+| Cookie / storage policy | IMPLEMENTED | Lists the two `localStorage` items, purpose and duration. |
+| Cookie consent | NOT APPLICABLE | No cookies. The two preferences are stored only when the visitor chooses them, for a service they asked for, which is exempt from consent under Lei 41/2004, art. 5. A consent banner would be needed before any analytics or advertising. |
+| Tracking disclosure | IMPLEMENTED | No trackers (static test forbids them). Direct browser requests to CARTO, Esri and Open-Meteo are disclosed with what each receives. |
+| Form consent | NOT APPLICABLE | The site has no forms. Contact goes through GitHub issues. |
+| Data minimisation | IMPLEMENTED | No visitor identifiers are used for rate limiting; coordinates are rounded before reaching Nominatim and OpenAQ; logs record error names, not URLs or messages; operator alerts carry no visitor data. |
+| Operator / contact information | OWNER DECISION | The policy names the maintainer by the pseudonym "WhiteBlindness" and gives GitHub issues as the contact. GDPR art. 13(1)(a) asks for the controller's identity and contact details; see owner decisions. |
+| Local laws | IMPLEMENTED | GDPR and Lei 58/2019 (privacy notice), Lei 41/2004 (storage), unofficial-source notice with 112. DL 7/2004 identification duties and the Livro de Reclamações do not apply to a non-commercial site with no consumer service (see research). |
+| Third-party services / embeds | IMPLEMENTED | No iframes or third-party scripts. Third-party requests are listed in the policy and enforced by the Content Security Policy. Provider-specific findings are below. |
+| Copyright, image and data rights | IMPLEMENTED | Attributions for NASA FIRMS, CARTO and OpenStreetMap, Esri, Nominatim, Open-Meteo (CC BY 4.0), OpenAQ, news publishers and fonts on `/sobre`. News shows headline and link only. |
+| Unsupported product claims | IMPLEMENTED | Detections are no longer called active fires or graded by severity; operational status is "unknown"; the overview no longer extrapolates a burned area; the per-detection estimate states its method; the news note no longer claims coverage starts at the first detection. A static test keeps "severity" out of the model and copy. |
+| Fake reviews | NOT APPLICABLE | No reviews or testimonials. |
+| Refund policy | NOT APPLICABLE | Nothing is sold. |
+| Business identity / details | NOT APPLICABLE | No economic activity today. Becomes required with advertising or paid services (see commercialisation). |
+
+## Legal research summary
+
+Sources were searched on 02/10/2026. Several official sites (EUR-Lex, Diário da República, CNPD) could not be fetched directly from the research environment, so some article numbers rest on secondary summaries; they are marked *to verify*.
+
+| Topic | Finding | Confidence |
+|---|---|---|
+| GDPR applies? | Yes. IP addresses in hosting logs are personal data (CJEU C-582/14 *Breyer*; recital 30). The household exemption does not cover publication to an indefinite audience (C-101/01 *Lindqvist*). | High |
+| Controller identity (art. 13(1)(a)) | The notice must give "the identity and the contact details of the controller". No authority was found accepting a pseudonym alone; Article 29 WP guidelines (WP260 rev.01, endorsed by the EDPB) expect easy identification. An email address suffices; a postal address is not required by the text. | Medium |
+| Legal basis for logs | Legitimate interest in operating and securing the site (art. 6(1)(f), recital 49). Cloudflare acts as processor under its DPA. | Medium-high |
+| Storage on the device (Lei 41/2004, art. 5, as amended by Lei 46/2012) | Covers `localStorage`. Storage strictly necessary for a service the user explicitly requested is exempt from consent; UI preferences set by the user fit that best when disclosed. | Medium-high |
+| Lei 58/2019 | Applies as the GDPR implementing law; nothing specific for a small site beyond the sanctions regime (article numbers *to verify*). | Medium-low |
+| Third-party tile and weather requests | A site that makes the browser contact a third party co-determines that transmission (CJEU C-40/17 *Fashion ID*) and must disclose it; consent is needed only if the third party stores or reads data on the device. | Medium |
+| DL 7/2004, art. 10 (provider identification) | Applies to information-society services provided for remuneration or in an economic activity; probably not to a free, ad-free portfolio site. Would apply with advertising: name, address, email and tax number. | Medium-low |
+| Livro de Reclamações (DL 156/2005, DL 74/2017) | Does not apply: no goods or services supplied to consumers. | Medium-high |
+| Accessibility law | The European Accessibility Act (Directive 2019/882, DL 82/2022) covers listed services such as e-commerce and banking; DL 83/2018 covers public bodies. Neither applies. WCAG 2.2 AA is a voluntary engineering target. | High |
+| Databases and copyright | Showing individual detections is low risk under the database right (Directive 96/9/EC); FIRMS data is openly shared; headline-and-link news display falls within the press publishers' right exceptions (Directive 2019/790, art. 15; DL 47/2023). | Medium-high |
+| Emergency notice | No mandatory wording found; the existing "unofficial, call 112" notice follows good practice (compare fogos.pt). | Medium |
+
+## Third-party services
+
+| Service | Used for | Where | Auth | Practical limits | Current non-commercial use | Material finding |
+|---|---|---|---|---|---|---|
+| NASA FIRMS (VIIRS_SNPP_NRT) | Detections | Server (cron, detail route) | Free map key, server secret | 5 000 transactions / 10 min per key; area API 1–5 days | Acceptable; acknowledgement shown | Detail requests were allowed up to 10 days; now limited to 5. |
+| CARTO basemaps | Vector style, tiles, glyphs | Browser | API key now required | Free non-commercial up to 5 M tiles/month | Acceptable once a key is set | **Key required since 23/09/2026.** Keyless raster tiles are watermarked; keyless vector styles may follow. Key support is in place; registering the key is an owner action. |
+| Esri World Imagery (`server.arcgisonline.com`) | Satellite basemap | Browser | None (legacy endpoint) | Not published | Acceptable as non-commercial; "Powered by Esri" shown | Tolerated rather than contracted: Esri says the legacy endpoint is not for commercial use. |
+| Open-Meteo | Model weather for a selected detection | Browser | None | < 10 000 calls/day per IP; free for non-commercial use | Acceptable; CC BY 4.0 credit shown | Kept in the browser on purpose: limits are per IP, and Worker egress addresses are shared with other tenants. |
+| OpenAQ v3 | Nearest PM2.5 reading | Server | API key, server secret | 60 requests/min, 2 000/hour per key | Acceptable | One lookup can take up to 7 calls; now cached per 2 km cell and capped per isolate. |
+| Nominatim (OpenStreetMap) | Place names | Server | None; identifying User-Agent required | 1 request/second for the whole application; caching required | Acceptable | Throttling is per isolate, not global; rounding to 2 km and edge caching keep real traffic far below the limit. |
+| Google News RSS | Related headlines | Server | None (no official API) | Undocumented | Grey area: terms reserve the service for use through its own interface | Feeds can be blocked at any time; the panel degrades to "news unavailable". |
+| Bing News RSS (fallback) | Related headlines | Server | None | Undocumented | Grey area: Microsoft terms limit Bing content to personal, non-commercial use | Same as Google. The Bing News Search API was retired in 2025. |
+| Cloudflare Workers, KV | Hosting, storage | Server | Account | Free plan (see [operations.md](./operations.md)) | Acceptable | Workers Logs keep request data for 3 days on Free today and up to 7 days from 01/12/2026; the policy says "up to 7 days". |
+
+## Commercialisation blockers / changes required later
+
+Commercialisation is not a current goal. If advertising, sponsorship or paid features were ever added:
+
+1. **Consent and disclosure.** A consent banner before any advertising or analytics cookies, and a rewritten privacy policy.
+2. **Provider identity.** DL 7/2004, art. 10 identification (name, geographic address, email, tax number) and possibly professional registration.
+3. **Esri.** Move to the ArcGIS Location Platform basemap service with an API key (free tier, then paid per 1 000 tiles); the legacy endpoint is non-commercial only.
+4. **CARTO.** Commercial tier: free up to 1 M tiles/month, then a paid plan.
+5. **Open-Meteo.** Advertising makes use commercial; a paid plan with a dedicated endpoint is required.
+6. **News.** Google News RSS and Bing RSS have no commercial licence; replace with a licensed news API or publishers' own feeds, or remove the news section.
+7. **Nominatim.** Heavy or commercial use should move to a paid geocoder or a self-hosted instance.
+8. **OpenAQ.** Check each data provider's licence flags (`commercialUseAllowed`) and OpenAQ's paid terms for higher rates.
+9. **NASA FIRMS.** No restriction found; keep the acknowledgement.
+
+## Owner decisions
+
+1. **Controller identity.** Publishing a legal name and a private contact channel (an email address) would most likely satisfy GDPR art. 13(1)(a); staying pseudonymous with GitHub issues keeps a residual risk, which is low in practice for a small non-commercial site. No personal data has been added to the site.
+2. **CARTO API key.** Register a free key and set the `CARTO_API_KEY` repository variable, or accept that the basemap may stop rendering or show a watermark.

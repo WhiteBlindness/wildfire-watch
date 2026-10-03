@@ -1,15 +1,11 @@
 ---
 name: WildfireWatch
-description: Real-time global wildfire monitoring, rendered like a midnight mission-control room
+description: Satellite fire detections on a global map, rendered like a midnight mission-control room
 colors:
   alert-red: "#ef4444"
   critical-crimson: "#b91c1c"
-  extreme-fill: "#7f1d1d"
-  high-fill: "#991b1b"
   amber-watch: "#f5c451"
   signal-amber: "#f59e0b"
-  flare-red: "#ff3b3b"
-  resolved-emerald: "#10b981"
   void-black: "#0a0d12"
   deep-airspace: "#0f172a"
   instrument-panel: "#12161d"
@@ -52,26 +48,20 @@ spacing:
   md: "16px"
   lg: "20px"
 components:
-  badge-active:
-    backgroundColor: "rgba(239,68,68,0.15)"
-    textColor: "{colors.alert-red}"
+  feed-health-badge:
+    textColor: "{colors.signal-white}"
     rounded: "{rounded.full}"
-    padding: "4px 10px"
-  badge-contained:
-    backgroundColor: "rgba(245,158,11,0.15)"
-    textColor: "{colors.signal-amber}"
+    padding: "0"
+  basis-tag:
+    backgroundColor: "rgba(10,13,18,0.55)"
+    textColor: "{colors.signal-white}"
     rounded: "{rounded.full}"
-    padding: "4px 10px"
-  badge-extinguished:
-    backgroundColor: "rgba(16,185,129,0.15)"
-    textColor: "{colors.resolved-emerald}"
-    rounded: "{rounded.full}"
-    padding: "4px 10px"
-  ad-slot:
+    padding: "2px 6px"
+  operational-status:
     backgroundColor: "{colors.panel-recess}"
     textColor: "{colors.signal-white}"
-    rounded: "{rounded.card}"
-    padding: "8px"
+    rounded: "{rounded.full}"
+    padding: "4px 10px"
 ---
 
 # Design System: WildfireWatch
@@ -80,37 +70,39 @@ components:
 
 **Creative North Star: "Mission Control at Midnight"**
 
-WildfireWatch reads like the main display wall of a night-shift operations room: a near-black world map as the permanent canvas, glowing hotspots as the only warm light source, and every floating panel a piece of glass instrumentation hovering over that canvas rather than a page of content sitting beside it. The dark theme is the primary, intentional world — light mode exists as a daylight-shift variant, not the default identity.
+WildfireWatch reads like the main display wall of a night-shift operations room: a near-black world map as the permanent canvas, satellite heat detections as the only warm light source, and every floating panel a piece of glass instrumentation hovering over that canvas rather than a page of content beside it. The dark theme is the primary, intentional world; light mode is a daylight-shift variant, not the default identity.
 
-Nothing on screen competes with the fire data for attention. Chrome (top bar, legend, side panel, ad slots) is deliberately quiet — translucent, blurred, low-contrast — so the map's heatmap glow and burned-area borders are always the brightest, most saturated things visible. Ad slots are the most visually recessive element in the system on purpose: dashed borders, muted fill, uppercase micro-label. They must never be mistaken for data.
+Nothing on screen competes with the detections for attention. Chrome (top bar, legend, timeline, side panel) is deliberately quiet: translucent, blurred, low-contrast, so the map's markers and pixel footprints are always the brightest, most saturated things visible.
 
-Component language is tactile and precise: crisp pill shapes, confident status-color contrast, glass surfaces that behave like real HUD panels built for fast scanning under pressure, not a soft consumer-app feel.
+The interface is honest about what a satellite can know. A detection is heat measured from orbit, not a confirmed incident: it is coloured by measured radiative power, never by "severity", and its operational status is shown as unknown because only an authority can report it. Every figure in the detail panel carries its basis (measured, reported by the source, estimated, inferred).
 
 **Key Characteristics:**
 - Dark-first: void-black canvas, glass-panel chrome, glow-driven depth instead of drop shadows.
-- One color language for meaning (the four-step severity ramp) — never introduce a second accent hue for decoration.
-- Floating, translucent surfaces (top bar, legend, side panel) read as instruments layered over the map, not as a separate page.
-- Ad slots are structurally and visually separated from data at every density.
+- One colour language for meaning: the four-step radiative-intensity ramp. Never introduce a second accent hue for decoration.
+- Floating, translucent surfaces read as instruments layered over the map, not as a separate page.
+- Data status is always visible: the overview says whether the snapshot is current, the refresh is failing, or the data is out of date.
 
 ## Colors
 
-The palette has exactly one job: make a fire's severity readable in under a second, day or night.
+The palette has one job: make a detection's radiative power readable in under a second, day or night, without implying how dangerous a fire is.
 
-### Primary
-- **Alert Red** (`#ef4444`): the product's core accent — wordmark dot, "Ativo" status badge, high-severity marker/stroke color. This is the color WildfireWatch is "the red one."
-- **Critical Crimson** (`#b91c1c`): extreme-severity marker and stroke color — the darkest, most saturated step in the ramp, reserved for the worst-case state.
-- **High Fill** (`#991b1b`) / **Extreme Fill** (`#7f1d1d`): darker, more muted variants of Alert Red / Critical Crimson used only for burned-area polygon *fills*, never for markers, badges, or strokes — the marker/badge stays bright and legible while the fill reads as a duller "scorched" wash underneath.
-- **Amber Watch** (`#f5c451`) / **Signal Amber** (`#f59e0b`): low- and moderate-severity steps respectively; also the international-aid banner's accent (reuses `signal-amber` rather than a new hue). These double as the moderate/low polygon fill colors too — only extreme/high get a distinct darker fill variant.
-- **Flare Red** (`#ff3b3b`): the bright, saturated stroke color for burned-area polygon borders on high/extreme fires — never used as a fill, only as the "hot edge" line.
+### Primary (the intensity ramp)
+- **Amber Watch** (`#f5c451`): below 10 MW.
+- **Signal Amber** (`#f59e0b`): 10–49 MW.
+- **Alert Red** (`#ef4444`): 50–149 MW; also the wordmark dot and the selected-detection accent.
+- **Critical Crimson** (`#b91c1c`): 150 MW or more, the darkest step.
 
-### Tertiary
-- **Resolved Emerald** (`#10b981`): the one hue outside the severity ramp, reserved exclusively for the "Extinto" status badge. Signals "this is over," which the red-to-amber ramp structurally cannot say.
+The thresholds live in `src/lib/wildfire/firms-dataset.ts` and the colours in `src/lib/wildfire/colors.ts`; the legend reads both.
+
+### Status tones
+- Data-health warnings (refresh failing, out-of-date data) use amber text with an amber dot; an unavailable source uses red. Current data stays neutral. These tones describe the pipeline, never a fire.
+- Air-quality categories use the conventional AQI colours inside their own card, which never sits next to the intensity ramp.
 
 ### Neutral (dark, default world)
 - **Void Black** (`#0a0d12`): page background.
-- **Deep Airspace** (`#0f172a`): the MapLibre canvas's own background layer, pinned independently of the page background so the map reads as a distinct instrument rather than just "more page."
+- **Deep Airspace** (`#0f172a`): the MapLibre canvas background, pinned independently of the page background so the map reads as a distinct instrument.
 - **Instrument Panel** (`#12161d`): floating surface fill (side panel, before translucency is applied).
-- **Panel Recess** (`#1a1f28`): recessed/grouped content fill (stat groups, ad slots).
+- **Panel Recess** (`#1a1f28`): recessed or grouped content fill (stat groups, the operational-status card).
 - **Hairline Steel** (`#262c37`): borders and dividers.
 - **Signal White** (`#e8eaed`): primary text.
 
@@ -118,94 +110,94 @@ The palette has exactly one job: make a fire's severity readable in under a seco
 - **Daylight Ink** (`#12151a`) on **Daylight Surface** (`#ffffff`), background (`#f5f6f7`), muted fill (`#eceef1`), border (`#d8dbe0`). Same structural roles as the dark palette, swapped via a `.dark` class rather than `prefers-color-scheme`, so the toggle is explicit and user-controlled.
 
 ### Named Rules
-**The One Ramp Rule.** All status/severity meaning flows through exactly one four-step ramp (Amber Watch → Signal Amber → Alert Red → Critical Crimson) plus the single Resolved Emerald exception. No other hue is ever added for "visual interest."
+**The One Ramp Rule.** All intensity meaning flows through exactly one four-step ramp (Amber Watch → Signal Amber → Alert Red → Critical Crimson). No other hue is added for "visual interest", and the ramp is never relabelled as severity.
+
+**The 60 % Floor.** Secondary text never drops below 60 % foreground opacity, the lowest value that keeps 4.5:1 contrast on every panel surface in light mode. A static test enforces it.
 
 ## Typography
 
 **Display/Body Font:** Geist Sans (with Arial, Helvetica, sans-serif fallback)
-**Mono Font:** JetBrains Mono (loaded for data, telemetry, coordinates, times, measurements, and operational badges)
+**Mono Font:** JetBrains Mono (loaded for data, telemetry, coordinates, times, measurements, and status badges)
 
-**Character:** Geist Sans remains the clean reading face for titles, labels, and prose. JetBrains Mono is the dedicated instrument face for changing operational data, keeping measurements and timestamps stable without turning ordinary copy into technical decoration.
+**Character:** Geist Sans remains the clean reading face for titles, labels and prose. JetBrains Mono is the dedicated instrument face for changing operational data, keeping measurements and timestamps stable without turning ordinary copy into technical decoration.
 
 ### Hierarchy
-- **Title** (600, 1.125rem/18px, 1.4 line-height): fire name in the detail panel header — the single largest, boldest text on the page.
-- **Body** (400, 0.875rem/14px, 1.5 line-height): stat values, panel copy, chart tooltips.
-- **Label** (600, 0.6875rem/11px, uppercase, 0.05em tracking): section eyebrows ("MEIOS NO TERRENO", "SEVERIDADE", "EVOLUÇÃO DA ÁREA ARDIDA") and the ad-slot micro-label.
-- **Data** (JetBrains Mono, tabular numerals): coordinates, times, measurements, telemetry readouts, and status/severity/operational badges; prose and descriptive labels remain Geist Sans.
+- **Title** (600, 1.125rem/18px, 1.4 line-height): the detail-panel heading ("Satellite-detected thermal anomaly" or "Detection cluster").
+- **Body** (400, 0.875rem/14px, 1.5 line-height): stat values and panel copy.
+- **Label** (600, 0.6875rem/11px, uppercase, 0.05em tracking): section eyebrows ("Satellite observation", "Where this comes from").
+- **Data** (JetBrains Mono, tabular numerals): coordinates, times, measurements, telemetry readouts, basis tags and status badges; prose and descriptive labels remain Geist Sans.
+
+Numbers follow the interface language: a decimal comma and a non-breaking-space thousands separator in Portuguese, dates as DD/MM/YYYY in both languages (`src/lib/i18n/format.ts`).
 
 ### Named Rules
-**The Uppercase Eyebrow Rule.** Any label introducing a data group is uppercase, tracked, and rendered at ~50% text opacity relative to body copy — it organizes without competing.
+**The Uppercase Eyebrow Rule.** Any label introducing a data group is uppercase, tracked, and rendered at reduced opacity relative to body copy: it organises without competing.
 
 ## Layout
 
-Full-bleed, single-viewport app: the map fills `100vw × 100vh` and every other surface is a `fixed`-position overlay on top of it, not a document in normal flow (`body { overflow: hidden }`, no page scroll).
+Full-bleed, single-viewport app: the map fills the viewport and every other surface is a fixed-position overlay on top of it (`body { overflow: hidden }`, no page scroll). A skip link is the first focusable element and moves focus into the panel.
 
-- **Top bar**: fixed top, wordmark pill left, theme toggle right, `p-3` mobile / `p-4` desktop.
-- **Legend + sidebar ad**: fixed bottom row, legend left, `sidebar-banner` ad slot right, desktop-only (`hidden md:block`).
-- **Detail panel**: bottom sheet on mobile (`max-h-[75vh]`, full width, slides up), right-hand fixed sidebar on desktop (`md:w-[400px]`, full height, slides in from the right). Same component, two placements — no separate mobile layout to maintain.
-- **Mobile leaderboard ad**: fixed bottom-center, mobile only, hidden whenever the detail panel is open (never stacks two floating surfaces at the same edge).
+- **Top bar**: fixed top, wordmark pill left; satellite, language and theme toggles right.
+- **Timeline**: a compact detection-timeline control (72 hours to now) near the top on mobile and the bottom on desktop.
+- **Legend**: fixed bottom-left on desktop, labelled "Radiative power (FRP)".
+- **Side panel**: a bottom sheet on mobile that starts collapsed so the map is visible first, and a right-hand sidebar on desktop (`md:w-[400px]`). It shows the global overview (data status, scope selector, metrics, strongest detections) or a detection's detail. Every view ends with the emergency notice and links to the legal pages.
 
 Spacing rhythm is tight and consistent: `8px` (icon-to-label gaps), `12px` (overlay edge padding, mobile), `16px` (overlay edge padding, desktop; card internal padding), `20px` (detail-panel internal gap).
 
 ## Elevation & Depth
 
-WildfireWatch does not use a traditional drop-shadow scale as its primary depth cue. Depth comes from two mechanisms instead:
+Depth comes from two mechanisms rather than a drop-shadow scale:
 
-1. **Glass, not shadow.** Every floating chrome surface (top bar, legend, detail panel) is translucent + blurred (`backdrop-blur`, `bg-surface/75–90`) rather than opaque-with-shadow. The map is meant to stay visible through the instrumentation.
-2. **Glow, not shadow, for the map itself.** Fire intensity reads through a two-layer heatmap (a wide, soft, low-opacity "glow" pass underneath a tighter, brighter core pass) and burned-area polygons carry a blurred glow line under their solid bright stroke (`line-blur: 4`, `line-opacity: 0.5`). Light is the depth cue, not shadow.
+1. **Glass, not shadow.** Every floating chrome surface is translucent and blurred (`backdrop-blur`, `bg-surface/75–90`) rather than opaque with a shadow. The map stays visible through the instrumentation.
+2. **Glow, not shadow, for the map itself.** Cluster markers carry a soft glow ring under the solid marker, and selected pixel footprints are drawn as bright, saturated cells. Light is the depth cue.
 
-Ordinary Tailwind `shadow-lg` / `shadow-2xl` still appear on floating panels as a secondary, understated lift — they exist so edges separate from busy map content behind them, not as the main elevation language.
+Ordinary `shadow-lg` still appears on floating panels as a secondary lift, so edges separate from busy map content behind them.
 
 ### Named Rules
-**The Glow-Over-Shadow Rule.** When something needs to feel "elevated" or "urgent," reach for glow (blur + saturated color) before reaching for a drop shadow. Shadows are structural (separate this panel from that map); glow is meaningful (this is where the fire is).
+**The Glow-Over-Shadow Rule.** When something needs to feel elevated, reach for glow (blur + saturated colour) before a drop shadow. Shadows are structural; glow marks where the heat is.
 
 ## Shapes
 
-- **Full round (`9999px`)**: every pill and toggle — status badges, the wordmark chip, the theme-toggle track and thumb, severity legend dots, map circle markers.
-- **Panel radius (`16px` / `rounded-2xl`)**: the detail panel's outer corners — top corners only on the mobile bottom-sheet, left corners only on the desktop sidebar.
-- **Card radius (`8px` / `rounded-lg` / `rounded-xl`)**: grouped stat blocks, the legend card, ad-slot borders.
-- Borders are hairline (`1px`) and low-contrast (`border-border`, ~10–20% perceived opacity via the neutral border token); no heavy strokes anywhere except the map's severity-colored polygon outlines, which are the one place a bold, saturated line is correct.
+- **Full round (`9999px`)**: every pill and toggle: status badges, basis tags, the wordmark chip, toggle tracks and thumbs, legend dots, map markers.
+- **Panel radius (`16px` / `rounded-2xl`)**: the side panel's outer corners.
+- **Card radius (`8px` / `rounded-lg` / `rounded-xl`)**: grouped stat blocks, the legend card, data cards.
+- Borders are hairline (`1px`) and low-contrast (`border-border`).
 
 ## Components
 
-### Status Badges
-- **Shape:** full pill, `4px 10px` padding, `0.6875rem` medium-weight text.
-- **Active (Ativo):** `rgba(239,68,68,0.15)` fill, Alert Red text, matching 40%-opacity ring.
-- **Contained (Dominado):** `rgba(245,158,11,0.15)` fill, Signal Amber text.
-- **Extinguished (Extinto):** `rgba(16,185,129,0.15)` fill, Resolved Emerald text.
-- A plain severity pill (`bg-surface-muted`, neutral text) always sits beside the status pill — status and severity are always shown as a pair, never status alone.
+### Data-health badge
+- Mono, uppercase, with a small dot; announced politely to assistive technology when it changes.
+- States: loading, current data, refresh failing, out-of-date data, source unavailable. A sentence beneath explains the state with times ("The latest refresh failed. Showing the last successful snapshot, from 02/10/2026, 13:00.").
+- Snapshot age and refresh health are separate facts: a snapshot ten minutes old after a failed refresh reads as "refresh failing", not "current".
 
-### Detail Panel (signature component)
-- **Surface:** `bg-surface/75` + `backdrop-blur-xl`, hairline `border-border/60` — the system's clearest glass instance.
-- **Placement:** bottom sheet (mobile) / right sidebar (desktop), see Layout.
-- **Internal structure, top to bottom:** name + region header → status/severity badge pair → 2-column stat grid (area, start/containment, wind) → recessed "Meios no terreno" stat card → conditional amber international-aid callout → evolution chart → ad slot pinned to the bottom via `mt-auto`.
-- **Close control:** a bordered circular icon button, top-right, always reachable regardless of scroll position.
+### Basis tags
+- Small mono pills next to a value's label: Measured, Reported by source, Estimate, Inferred. Every figure in the detection detail has one where the distinction matters.
 
-### Ad Slots
-- **Style:** dashed `border-border`, `bg-surface-muted/60`, `rounded-md`, centered uppercase micro-label reading "Publicidade · WxH", text at ~40% foreground opacity.
-- **Placement rule:** desktop sidebar-banner (300×100) bottom-right beside the legend; panel-rectangle (300×250) pinned to the bottom of the detail panel; mobile-leaderboard (320×50) bottom-center, only when the panel is closed.
-- Ad slots never sit inside the same visual card as fire data — always their own bordered box.
+### Operational-status card
+- A recessed card at the top of the detection detail with a neutral pill reading "Unknown" and one sentence explaining that satellites measure heat and only authorities know whether a fire is active, contained or out. No red, amber or green status colours: those would imply knowledge the data does not contain.
 
-### Map Layers
-- **Heatmap:** two stacked layers — a wide (`radius: 55`), low-opacity (`0.45`) glow pass in orange-to-crimson, plus a tighter (`radius: 20`), brighter (`0.9`) core pass ramping yellow → amber → Alert Red → Critical Crimson → a pale hot-core yellow at peak density.
-- **Burned-area polygons:** severity-colored fill at `0.32` opacity, a blurred glow line underneath, and a solid Flare-Red (high/extreme) or severity-colored (moderate/low) stroke on top.
-- **Fire markers:** severity-colored filled circles, white stroke, radius/stroke-width both step up when selected (`7px → 11px` radius, `1.5px → 3px` stroke) — the only size-based (not just color-based) selection cue on the map.
-- **Base style:** CARTO dark-matter (dark) / positron (light) vector tiles, with the dark style's background layer explicitly repainted to Deep Airspace (`#0f172a`) on load rather than trusting the upstream default.
+### Detail panel (signature component)
+- **Surface:** `bg-surface/75` + `backdrop-blur-xl`, hairline `border-border/60`.
+- **Structure, top to bottom:** back link → technical readout (nearest place, acquisition time in UTC, burned-area estimate with its method) → heading and close button → operational-status card → satellite observation (FRP, confidence or detection count, acquisition times, coordinates, country) → provenance (provider and product, instrument, acquisition, retrieval and processing times, attribution) → air quality → model weather → news → legal footer.
+- **Close control:** a bordered circular icon button, top-right.
+
+### Map layers
+- **Markers and clusters:** MapLibre clusters group nearby detections at low zoom; single detections are filled circles coloured by intensity band. Clusters are a display grouping, never presented as incidents.
+- **Pixel footprints:** at detail zoom, each detection is drawn as its sensor pixel using the scan and track size FIRMS reports (nominally 375 m). They are explicitly not fire perimeters.
+- **Base styles:** CARTO dark-matter (dark) and positron (light) vector tiles; optional Esri World Imagery under CARTO labels in satellite mode.
 
 ### Navigation
-- No traditional nav; the top bar is a single wordmark pill (left) and theme toggle (right), both floating, both `pointer-events-auto` islands inside an otherwise `pointer-events-none` header strip so map panning underneath is never blocked.
+- No traditional nav; the top bar's controls are `pointer-events-auto` islands inside an otherwise `pointer-events-none` header strip, so map panning underneath is never blocked.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** keep dark as the default, primary world; treat light mode as a secondary daylight-shift variant, not co-equal.
-- **Do** route all status/severity meaning through the One Ramp (plus Resolved Emerald) — never invent a new hue for a new state.
-- **Do** use glass (blur + translucency) for chrome that floats over the map; reach for glow (blur + saturated color), not drop shadow, when something needs to feel urgent or elevated.
-- **Do** keep ad slots visually recessive (dashed border, muted fill, micro-label) and structurally separate from data cards at every breakpoint.
-- **Do** show status and severity as a paired badge, never status alone.
+- **Do** keep dark as the default, primary world.
+- **Do** route all intensity meaning through the One Ramp and call it radiative power.
+- **Do** label estimates as estimates, with the method one tap or one line away.
+- **Do** show the data's age and refresh state wherever the overview is shown.
 
 ### Don't:
-- **Don't** let mock/synthetic data look or read as indistinguishable from real live data — no fabricated "LIVE" indicators or real-time-looking timestamps beyond what the mock generator actually produces.
-- **Don't** add a second decorative accent color outside the severity ramp.
-- **Don't** make drop shadow the primary elevation cue on the map or its overlays — glow and blur carry that job here.
-- **Don't** give an ad slot the same card treatment (solid fill, solid border, drop shadow) as a data card; the dashed/muted treatment is the whole point.
+- **Don't** describe a satellite detection as an active, contained or extinguished fire, or grade it by severity.
+- **Don't** let synthetic test data look like live data outside the test suite.
+- **Don't** add a second decorative accent colour outside the intensity ramp.
+- **Don't** make drop shadow the primary elevation cue on the map or its overlays.
