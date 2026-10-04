@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { interpolate } from "../src/lib/i18n/dictionaries";
 import en from "../src/lib/i18n/en";
 import pt from "../src/lib/i18n/pt";
 import { stubThirdParties, watchCspViolations } from "./support/stubs";
@@ -105,6 +106,9 @@ test("a linked detection shows the occurrence's status, and its details show wha
   await page.getByText(pt.operational.howLinkedTitle).click();
   await expect(page.getByText(/menos de 5 km do local registado/)).toBeVisible();
   await expect(page.getByText(pt.operational.attribution)).toBeVisible();
+  // One notice, about this source's delay, not the satellite feed's as well.
+  await expect(page.getByText(pt.operational.officialDisclaimer)).toBeVisible();
+  await expect(page.getByText(pt.legal.emergencyNotice)).toHaveCount(0);
   expect(await axeViolations(page), "occurrence details").toEqual([]);
 
   await page.getByRole("button", { name: pt.fireDetail.backToGlobalMap }).click();
@@ -125,6 +129,13 @@ test("a detection between two occurrences says so, links to both and picks neith
   await expect(status).toContainText(pt.operationalStatus.unknown);
   await expect(status.getByRole("button", { name: /Monchique · Alferce/ })).toBeVisible();
   await expect(status.getByRole("button", { name: /Monchique · Marmelete/ })).toBeVisible();
+
+  // From either occurrence, the detection is reported as nearby but not linked.
+  await status.getByRole("button", { name: /Monchique · Alferce/ }).click();
+  const satellite = page.getByTestId("incident-satellite");
+  await expect(satellite).toHaveAttribute("data-evidence", "none");
+  await expect(satellite).toContainText(interpolate(pt.operational.satelliteAmbiguousOnly, { count: "1" }));
+  await expect(satellite).not.toContainText(pt.operational.satelliteNone);
 });
 
 test("a covered detection with no occurrence nearby says what that does and does not mean", async ({ page }) => {

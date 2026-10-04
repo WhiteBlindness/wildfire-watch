@@ -51,8 +51,8 @@ export default function IncidentDetailsPanel({ incidentId, onClose }: IncidentDe
       )}
 
       {feed && (
-        <details className="rounded-xl bg-surface-muted/35 p-3.5 ring-1 ring-inset ring-border/60">
-          <summary className="min-h-11 cursor-pointer py-2 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+        <details className="rounded-xl bg-surface-muted/35 px-3.5 ring-1 ring-inset ring-border/60 open:pb-3.5">
+          <summary className="cursor-pointer py-3.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
             {t.operational.howLinkedTitle}
           </summary>
           <p className="mt-1 text-xs leading-5 text-foreground/70">
@@ -74,8 +74,7 @@ export default function IncidentDetailsPanel({ incidentId, onClose }: IncidentDe
         </details>
       )}
 
-      <p className="text-[11px] leading-4 text-foreground/65">{t.operational.officialDisclaimer}</p>
-      <PanelFooter />
+      <PanelFooter notice={t.operational.officialDisclaimer} />
     </div>
   );
 }
@@ -127,6 +126,7 @@ function SatelliteEvidence({ view }: { view: IncidentView }) {
   const { locale, t } = useLocale();
   const { evidence } = view;
   const hasLinks = Boolean(evidence && evidence.matchedDetectionIds.length > 0);
+  const ambiguousCount = evidence?.ambiguousDetectionIds.length ?? 0;
 
   return (
     <section data-testid="incident-satellite" data-evidence={evidence?.satellite ?? "none"} aria-labelledby="incident-satellite-title" className="rounded-xl bg-red-500/8 p-3.5 ring-1 ring-inset ring-red-500/25">
@@ -148,12 +148,16 @@ function SatelliteEvidence({ view }: { view: IncidentView }) {
             </p>
           )}
         </>
+      ) : ambiguousCount > 0 ? (
+        <p className="text-xs leading-5 text-foreground/70">
+          {interpolate(t.operational.satelliteAmbiguousOnly, { count: formatThousands(ambiguousCount) })}
+        </p>
       ) : (
         <p className="text-xs leading-5 text-foreground/70">{t.operational.satelliteNone}</p>
       )}
-      {evidence && evidence.ambiguousDetectionIds.length > 0 && (
+      {hasLinks && ambiguousCount > 0 && (
         <p className="mt-2 text-xs leading-5 text-foreground/70">
-          {interpolate(t.operational.satelliteAmbiguous, { count: formatThousands(evidence.ambiguousDetectionIds.length) })}
+          {interpolate(t.operational.satelliteAmbiguous, { count: formatThousands(ambiguousCount) })}
         </p>
       )}
     </section>

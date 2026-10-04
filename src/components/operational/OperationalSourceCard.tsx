@@ -55,31 +55,38 @@ export default function OperationalSourceCard({ onSelectIncident }: { onSelectIn
             </div>
           </dl>
 
-          <h4 className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65">{t.operational.listTitle}</h4>
           {shown.length === 0 ? (
-            <p className="text-xs text-foreground/65">{t.operational.listEmpty}</p>
+            <p className="mt-3 text-xs text-foreground/65">{t.operational.listEmpty}</p>
           ) : (
-            <ul className="space-y-1.5">
-              {shown.map(({ incident }) => (
-                <li key={incident.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectIncident(incident.id)}
-                    className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-border/60 bg-surface/75 px-3 py-2 text-left transition-colors hover:border-foreground/25 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs font-medium text-foreground">
-                        {[incident.municipality, incident.parish].filter(Boolean).join(" · ") || incident.sourceId}
+            <>
+              <h4 id="operational-list-title" className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65">{t.operational.listTitle}</h4>
+              <ul aria-labelledby="operational-list-title" className="space-y-1.5">
+                {shown.map(({ incident }) => (
+                  <li key={incident.id}>
+                    <button
+                      type="button"
+                      onClick={() => onSelectIncident(incident.id)}
+                      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-border/60 bg-surface/75 px-3 py-2 text-left transition-colors hover:border-foreground/25 hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/70"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-medium text-foreground">
+                          {[incident.municipality, incident.parish].filter(Boolean).join(" · ") || incident.sourceId}
+                        </span>
+                        <time dateTime={incident.startedAt} className="mt-0.5 block font-mono text-[11px] tabular-nums text-foreground/65">
+                          {t.operational.startedLabel} {formatShortUtcTime(incident.startedAt, locale)}
+                        </time>
                       </span>
-                      <time dateTime={incident.startedAt} className="mt-0.5 block font-mono text-[11px] tabular-nums text-foreground/65">
-                        {t.operational.startedLabel} {formatShortUtcTime(incident.startedAt, locale)} UTC
-                      </time>
-                    </span>
-                    <PhaseBadge phase={incident.phase} sourceLabel={incident.phaseLabel} />
-                  </button>
-                </li>
-              ))}
-            </ul>
+                      <PhaseBadge phase={incident.phase} sourceLabel={incident.phaseLabel} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {views.length > shown.length && (
+                <p className="mt-2 text-[11px] text-foreground/65">
+                  {interpolate(t.operational.listMore, { count: formatThousands(views.length - shown.length) })}
+                </p>
+              )}
+            </>
           )}
         </>
       )}
