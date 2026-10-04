@@ -60,7 +60,7 @@ Next.js App Router · TypeScript · MapLibre GL JS 6 via react-map-gl · Turf.js
 
 Deployed to Cloudflare Workers through the OpenNext adapter, which is the constraint that shapes the server code: no Node built-ins, no `fs`, no `path`. Everything runs on free tier.
 
-The map needs a browser with WebGL2; without it, the panel and detection list still work but the map does not draw.
+The map needs a browser with WebGL2. Without it, the map area says the interactive map is unavailable on that browser, and the panel, the detection list and the detection details work as usual.
 
 ## Running it
 

@@ -10,6 +10,10 @@ interface MapLoadingStateProps {
   onRetry?: () => void;
   className?: string;
   announce?: boolean;
+  /** Error mode: replaces the default description. */
+  description?: string;
+  /** Error mode: "inline" lets a parent stack it with other notices instead of floating over the map. */
+  placement?: "overlay" | "inline";
 }
 
 /** Branded fallback used both while the map chunk loads and while its data is pending. */
@@ -18,6 +22,8 @@ export default function MapLoadingState({
   onRetry,
   className,
   announce = true,
+  description,
+  placement = "overlay",
 }: MapLoadingStateProps) {
   const { t } = useLocale();
   const isError = mode === "error";
@@ -28,13 +34,13 @@ export default function MapLoadingState({
         role="alert"
         aria-live="assertive"
         data-testid="map-load-error"
-        className={`pointer-events-auto absolute left-1/2 top-24 z-40 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-neutral-200 bg-white/90 p-4 text-neutral-900 shadow-[0_18px_56px_rgba(0,0,0,0.24)] backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/90 dark:text-neutral-100 ${className ?? ""}`}
+        className={`pointer-events-auto ${placement === "overlay" ? "absolute left-1/2 top-24 z-40 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2" : "w-full max-w-[28rem]"} rounded-2xl border border-neutral-200 bg-white/90 p-4 text-neutral-900 shadow-[0_18px_56px_rgba(0,0,0,0.24)] backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/90 dark:text-neutral-100 ${className ?? ""}`}
       >
         <div className="flex items-start gap-3">
           <span aria-hidden="true" className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-400 shadow-[0_0_14px_rgba(239,68,68,0.75)]" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">{t.map.errorTitle}</p>
-            <p className="mt-1 text-xs leading-5 text-neutral-600 dark:text-neutral-400">{t.map.errorDescription}</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-600 dark:text-neutral-400">{description ?? t.map.errorDescription}</p>
             {onRetry && (
               <button
                 type="button"

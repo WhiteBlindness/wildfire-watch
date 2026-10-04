@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import Map, { AttributionControl, Layer, ScaleControl, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
+import Map, { AttributionControl, Layer, ScaleControl, Source, type ErrorEvent, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
 import { setWorkerUrl, type FilterSpecification, type GeoJSONSource, type Map as MapLibreMap, type MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { DetectionSelection, ThermalDetection } from "@/lib/wildfire/types";
@@ -21,6 +21,7 @@ import {
   withCartoKey,
 } from "./mapPresentation";
 import { syncSatelliteLayers } from "./satelliteLayers";
+import { isMapRendererUnavailable } from "./rendererSupport";
 import { EMPTY_DETAIL_STATE, detailStateForSelection, withDetailPoints, type DetailState } from "./detailState";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 
@@ -241,13 +242,15 @@ interface FireMapProps {
   selection: DetectionSelection | null;
   onSelect: (selection: DetectionSelection | null) => void;
   onMapLoad: () => void;
+  /** Called once if this browser or device cannot draw the map (no WebGL2). */
+  onRendererUnavailable: () => void;
   theme: "dark" | "light";
   basemapMode: BasemapMode;
   countryScope: string;
   timelineHour: number;
 }
 
-export default function FireMap({ detections, allDetections, selection, onSelect, onMapLoad, theme, basemapMode, countryScope, timelineHour }: FireMapProps) {
+export default function FireMap({ detections, allDetections, selection, onSelect, onMapLoad, onRendererUnavailable, theme, basemapMode, countryScope, timelineHour }: FireMapProps) {
   const mapRef = useRef<MapRef>(null);
   const hasReportedMapLoadRef = useRef(false);
   const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
@@ -673,6 +676,19 @@ export default function FireMap({ detections, allDetections, selection, onSelect
     [applyStyleEnhancements, onMapLoad],
   );
 
+  // Supplying onError replaces react-map-gl's default console.error, so other
+  // map errors (a failed tile, for instance) are still logged as before.
+  const handleMapError = useCallback(
+    (event: ErrorEvent) => {
+      if (isMapRendererUnavailable(event.error)) {
+        onRendererUnavailable();
+        return;
+      }
+      console.error(event.error);
+    },
+    [onRendererUnavailable],
+  );
+
   useEffect(() => {
     if (!mapInstance) return;
     return observeStyleReady(mapInstance, () => applyStyleEnhancements(mapInstance));
@@ -746,6 +762,7 @@ export default function FireMap({ detections, allDetections, selection, onSelect
       locale={mapUiStrings}
       transformRequest={addCartoKey}
       onLoad={handleLoad}
+      onError={handleMapError}
     >
       <AttributionControl key={basemapMode} compact position="bottom-left" />
       <ScaleControl position="bottom-right" unit="metric" />

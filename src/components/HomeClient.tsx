@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import TopBar from "@/components/layout/TopBar";
 import Legend from "@/components/map/Legend";
 import MapLoadingState from "@/components/map/MapLoadingState";
+import MapUnavailableNotice from "@/components/map/MapUnavailableNotice";
 import SidePanel from "@/components/panel/SidePanel";
 import { fetchDetectionSnapshot } from "@/lib/wildfire/firms-adapter";
 import { detectionToSelection } from "@/lib/wildfire/selection";
@@ -34,6 +35,9 @@ const FireMap = dynamic(() => import("@/components/map/FireMap"), {
  */
 const FEED_REFRESH_INTERVAL_MS = 10 * 60 * 1_000;
 
+/** "unavailable": this browser or device cannot draw the map; the data is unaffected. */
+type MapStatus = "loading" | "ready" | "unavailable";
+
 export default function HomeClient() {
   const { resolvedTheme } = useTheme();
   const { t } = useLocale();
@@ -41,7 +45,7 @@ export default function HomeClient() {
   const [feedState, setFeedState] = useState<FeedLoadStatus>("loading");
   const detections = useMemo(() => feedSnapshot?.detections ?? [], [feedSnapshot]);
   const [feedRetryNonce, setFeedRetryNonce] = useState(0);
-  const [isMapReady, setIsMapReady] = useState(false);
+  const [mapStatus, setMapStatus] = useState<MapStatus>("loading");
   const [selection, setSelection] = useState<DetectionSelection | null>(null);
   const [isPanelMinimized, setIsPanelMinimized] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState("global");
@@ -106,7 +110,8 @@ export default function HomeClient() {
     [detections, selectedCountry],
   );
   const mapTheme = resolvedTheme === "light" ? "light" : "dark";
-  const isInitialLoading = !isMapReady || (feedState === "loading" && !feedSnapshot);
+  const isMapUnavailable = mapStatus === "unavailable";
+  const isInitialLoading = mapStatus === "loading" || (feedState === "loading" && !feedSnapshot);
   const panelState = selection
     ? "detail-expanded"
     : isPanelMinimized
@@ -114,7 +119,13 @@ export default function HomeClient() {
       : "global-expanded";
 
   const handleMapLoad = useCallback(() => {
-    setIsMapReady(true);
+    setMapStatus("ready");
+  }, []);
+
+  const handleMapUnavailable = useCallback(() => {
+    setMapStatus("unavailable");
+    // The timeline is hidden with the map; a running playback would keep re-rendering.
+    setIsTimelinePlaying(false);
   }, []);
 
   function handleMapSelect(next: DetectionSelection | null): void {
@@ -155,14 +166,19 @@ export default function HomeClient() {
         {t.panel.skipToPanel}
       </a>
       {/* Keep MapLibre mounted under the branded lifecycle layer so it can
-          measure the viewport and finish style work while data is pending. */}
-      <div className={`wildfire-watch-map absolute inset-0 z-0 transition-opacity duration-[400ms] motion-reduce:duration-0 ${isInitialLoading ? "opacity-0" : "opacity-100"}`}>
+          measure the viewport and finish style work while data is pending.
+          If it cannot draw on this device it is hidden, not unmounted: a map
+          that failed after loading is left alone rather than torn down. */}
+      <div
+        className={`wildfire-watch-map absolute inset-0 z-0 transition-opacity duration-[400ms] motion-reduce:duration-0 ${isInitialLoading ? "opacity-0" : "opacity-100"} ${isMapUnavailable ? "hidden" : ""}`}
+      >
         <FireMap
           detections={scopedDetections}
           allDetections={detections}
           selection={selection}
           onSelect={handleMapSelect}
           onMapLoad={handleMapLoad}
+          onRendererUnavailable={handleMapUnavailable}
           theme={mapTheme}
           basemapMode={basemapMode}
           countryScope={selectedCountry}
@@ -171,27 +187,54 @@ export default function HomeClient() {
       </div>
 
       {isInitialLoading && <MapLoadingState />}
-      {!isInitialLoading && feedState === "error" && (
+      {!isInitialLoading && !isMapUnavailable && feedState === "error" && (
         <MapLoadingState mode="error" onRetry={handleFeedRetry} />
       )}
 
-      <TopBar basemapMode={basemapMode} onBasemapChange={setBasemapMode} />
+      <TopBar basemapMode={basemapMode} onBasemapChange={setBasemapMode} showBasemapToggle={!isMapUnavailable} />
 
-      <div className="pointer-events-none fixed inset-x-0 top-[4.75rem] z-30 flex justify-center px-3 md:top-auto md:bottom-6 md:right-[416px] md:left-0 md:px-4">
-        <GlobalTimelineControl
-          value={timelineHour}
-          isPlaying={isTimelinePlaying}
-          onChange={(nextValue) => {
-            setTimelineHour(nextValue);
-            setIsTimelinePlaying(false);
-          }}
-          onTogglePlayback={() => setIsTimelinePlaying((current) => !current)}
-        />
-      </div>
+      {/* Persistent, so the change is announced when the notice appears. */}
+      <p aria-live="polite" className="sr-only">
+        {!isInitialLoading && isMapUnavailable ? t.map.unavailableTitle : ""}
+      </p>
+      {!isInitialLoading && isMapUnavailable && (
+        // The map is not drawn, so this layer may take pointer events and scroll
+        // when zoomed text or a stacked feed error does not fit.
+        <div className="absolute inset-x-0 bottom-20 top-20 z-20 flex flex-col overflow-y-auto px-4 py-2 md:inset-y-0 md:right-[416px]">
+          <div className="mx-auto flex w-full max-w-[28rem] flex-col gap-3 md:my-auto">
+            {feedState === "error" && (
+              <MapLoadingState
+                mode="error"
+                placement="inline"
+                description={t.map.errorDescriptionWithoutMap}
+                onRetry={handleFeedRetry}
+              />
+            )}
+            <MapUnavailableNotice hasData={feedSnapshot !== null} onShowList={() => setIsPanelMinimized(false)} />
+          </div>
+        </div>
+      )}
 
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 hidden items-end justify-start p-4 md:right-[416px] md:flex">
-        <Legend />
-      </div>
+      {/* The timeline and legend only act on the map. */}
+      {!isMapUnavailable && (
+        <>
+          <div className="pointer-events-none fixed inset-x-0 top-[4.75rem] z-30 flex justify-center px-3 md:top-auto md:bottom-6 md:right-[416px] md:left-0 md:px-4">
+            <GlobalTimelineControl
+              value={timelineHour}
+              isPlaying={isTimelinePlaying}
+              onChange={(nextValue) => {
+                setTimelineHour(nextValue);
+                setIsTimelinePlaying(false);
+              }}
+              onTogglePlayback={() => setIsTimelinePlaying((current) => !current)}
+            />
+          </div>
+
+          <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 hidden items-end justify-start p-4 md:right-[416px] md:flex">
+            <Legend />
+          </div>
+        </>
+      )}
 
       <SidePanel
         detections={scopedDetections}
