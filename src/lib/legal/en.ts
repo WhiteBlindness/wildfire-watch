@@ -179,7 +179,7 @@ const en: LegalContent = {
             },
             {
               type: "paragraph",
-              text: "If a source's automatic refresh keeps failing, the server may notify the maintainer on Discord or Telegram and, once a day, send a technical summary when there is something to report. These messages contain only the technical state of the refreshes (source, time, error code, data age and record counts), never visitor data.",
+              text: "If a source's automatic refresh keeps failing, the server may notify the maintainer on Discord or Telegram and, once a day, send a technical summary when there is something to report. These messages contain only the technical state of the refreshes (source, time, error code, data age, record counts and, in the summary, status labels published by the source), never visitor data.",
             },
           ],
         },

@@ -179,6 +179,21 @@ test("stale operational data is labelled as such; the satellite feed is unaffect
   await expect(page.getByTestId("feed-health-badge")).toHaveAttribute("data-state", "healthy");
 });
 
+test("a failed refresh over recent occurrences says so, instead of reading as current", async ({ page }) => {
+  const aMinuteAgo = new Date(Date.now() - 60_000).toISOString();
+  await rewriteIncidents(page, (payload) => ({
+    ...payload,
+    ingestHealth: { ...(payload.ingestHealth as Record<string, unknown>), attemptedAt: aMinuteAgo, outcome: "failure", errorCode: "http_error", consecutiveFailures: 1 },
+  }));
+  await openHome(page);
+  await expect(page.getByTestId("operational-health-badge")).toHaveAttribute("data-state", "degraded");
+  await expect(page.getByTestId("operational-health-badge")).toContainText(pt.operational.healthDegraded);
+  await expect(page.getByTestId("operational-health-message")).toContainText("A última atualização falhou");
+  // The occurrences are still listed, and the satellite feed is unaffected.
+  await expect(page.getByTestId("operational-source").getByRole("listitem")).toHaveCount(4);
+  await expect(page.getByTestId("feed-health-badge")).toHaveAttribute("data-state", "healthy");
+});
+
 test("an unavailable operational source never breaks the satellite feed", async ({ page }) => {
   expectedConsoleErrors = [/^Failed to load resource/];
   await page.route("**/api/incidents", (route) => route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"Operational incidents unavailable"}' }));
@@ -190,6 +205,30 @@ test("an unavailable operational source never breaks the satellite feed", async 
   await expect(operationalDetail(page)).toHaveAttribute("data-state", "unavailable");
   await expect(page.getByTestId("operational-status")).toContainText(pt.operationalStatus.unknown);
   await expect(page.getByTestId("detection-provenance")).toContainText("NASA FIRMS");
+});
+
+test("a refresh of the official source leaves the camera where the visitor put it", async ({ page }) => {
+  // Reduced motion makes every flight instant, so jumping the clock cannot land mid-animation.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.install();
+  await openHome(page);
+  await page.getByTestId("operational-source").getByRole("button", { name: /Arganil/ }).click();
+  await expect(page.getByTestId("incident-status")).toBeVisible();
+  await expect(page.locator("[data-map-style-url]")).toHaveAttribute("data-map-camera-action", "flyTo");
+  // Count every camera move from here on.
+  await page.evaluate(() => {
+    const root = document.querySelector("[data-map-style-url]")!;
+    const moves = { count: 0 };
+    (window as unknown as { cameraMoves: typeof moves }).cameraMoves = moves;
+    new MutationObserver(() => { moves.count += 1; }).observe(root, { attributes: true, attributeFilter: ["data-map-camera-action", "data-map-camera-padding"] });
+  });
+
+  const refreshed = page.waitForResponse("**/api/incidents");
+  await page.clock.fastForward("05:01");
+  await refreshed;
+  await page.waitForTimeout(1_000);
+  expect(await page.evaluate(() => (window as unknown as { cameraMoves: { count: number } }).cameraMoves.count)).toBe(0);
+  await expect(page.getByTestId("incident-status")).toBeVisible();
 });
 
 test("in English, and at 390 px, an occurrence reads the same way", async ({ page }) => {

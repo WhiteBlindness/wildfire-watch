@@ -29,7 +29,7 @@ interface LocationResult {
 
 export default function FireDetailsPanel({ selection, provenance, onClose, onSelectIncident }: FireDetailsPanelProps) {
   const { locale, t } = useLocale();
-  const operational = useDetectionOperationalState(selection);
+  const operational = useDetectionOperationalState(selection, provenance?.processedAt ?? null);
   // Status comes only from a source that reports it: the linked official occurrence, if any.
   const linkedIncident = operational.state.kind === "matched" && operational.state.incidents.length === 1
     ? operational.state.incidents[0]

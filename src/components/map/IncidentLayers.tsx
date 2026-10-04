@@ -34,7 +34,9 @@ export default function IncidentLayers({
   theme: MapTheme;
   basemapMode: BasemapMode;
 }) {
-  const { feed } = useOperationalFeed();
+  const { feed, health } = useOperationalFeed();
+  // Out-of-date occurrences stay visible, faded, so the map does not present them as current.
+  const opacity = health.state === "stale" ? 0.4 : 1;
   const data = useMemo<GeoJSON.FeatureCollection<GeoJSON.Point>>(() => ({
     type: "FeatureCollection",
     features: (feed?.incidents ?? []).map((incident) => ({
@@ -56,7 +58,7 @@ export default function IncidentLayers({
       <Layer
         id={INCIDENT_HALO_LAYER_ID}
         type="circle"
-        paint={{ "circle-radius": radius, "circle-opacity": 0, "circle-stroke-width": 5.5, "circle-stroke-color": halo, "circle-stroke-opacity": 0.75 }}
+        paint={{ "circle-radius": radius, "circle-opacity": 0, "circle-stroke-width": 5.5, "circle-stroke-color": halo, "circle-stroke-opacity": 0.75 * opacity }}
       />
       <Layer
         id={INCIDENT_LAYER_ID}
@@ -66,6 +68,7 @@ export default function IncidentLayers({
           "circle-opacity": 0,
           "circle-stroke-width": ["case", ["get", "selected"], 4, 2.5],
           "circle-stroke-color": ring,
+          "circle-stroke-opacity": opacity,
         }}
       />
     </Source>

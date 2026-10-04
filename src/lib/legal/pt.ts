@@ -36,7 +36,7 @@ const pt: LegalContent = {
                 "Um incêndio pode não aparecer: as nuvens, o fumo denso e o intervalo entre passagens do satélite impedem algumas deteções.",
                 "Os dados chegam com atraso. A NASA publica as deteções em quase tempo real (normalmente até cerca de três horas após a passagem do satélite) e o WildfireWatch atualiza a sua cópia uma vez por hora.",
                 "Os satélites medem calor e não sabem se um incêndio está ativo, dominado ou extinto. Em Portugal continental, o WildfireWatch mostra o estado indicado pela ANEPC quando uma deteção fica perto de uma ocorrência oficial em aberto. Nos outros casos, o estado é desconhecido.",
-                "As ocorrências oficiais também chegam com alguns minutos de atraso: o WildfireWatch lê a lista pública da ANEPC a cada 15 minutos. Esta lista não é um canal de alerta.",
+                "As ocorrências oficiais também chegam com alguns minutos de atraso: o WildfireWatch lê a lista pública da ANEPC de 15 em 15 minutos. Esta lista não é um canal de alerta.",
                 "As áreas ardidas e o índice de qualidade do ar são estimativas, não medições oficiais. Os quadrados no mapa são os píxeis do sensor, não perímetros de incêndio.",
               ],
             },
@@ -179,7 +179,7 @@ const pt: LegalContent = {
             },
             {
               type: "paragraph",
-              text: "Se a atualização automática de uma fonte falhar repetidamente, o servidor pode avisar o responsável por Discord ou Telegram e, uma vez por dia, enviar um resumo técnico quando houver algo a assinalar. Estas mensagens contêm apenas o estado técnico das atualizações (fonte, hora, código de erro, idade dos dados e número de registos), nunca dados de visitantes.",
+              text: "Se a atualização automática de uma fonte falhar repetidamente, o servidor pode avisar o responsável por Discord ou Telegram e, uma vez por dia, enviar um resumo técnico quando houver algo a assinalar. Estas mensagens contêm apenas o estado técnico das atualizações (fonte, hora, código de erro, idade dos dados, número de registos e, no resumo, os rótulos de estado publicados pela fonte), nunca dados de visitantes.",
             },
           ],
         },

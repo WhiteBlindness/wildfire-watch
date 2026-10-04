@@ -28,10 +28,10 @@ export type SelectionOperationalState =
   | { kind: "not_covered" }
   /** The operational source could not be loaded. */
   | { kind: "unavailable" }
-  /** The detection is newer than the last reconciliation; it has not been compared yet. */
+  /** The detection may not have been compared yet: it comes from a newer FIRMS snapshot than the one reconciled. */
   | { kind: "not_reconciled" }
-  /** Compared, and no occurrence lies within the matching radius. */
-  | { kind: "none_nearby"; radiusKm: number }
+  /** Compared, and no occurrence met the rules: within radiusKm, started no more than windowHours after the detection. */
+  | { kind: "none_nearby"; radiusKm: number; windowHours: number }
   /** Linked to one or more occurrences; locationNoteKm is set when the nearest is farther than usual. */
   | { kind: "matched"; incidents: OperationalIncident[]; nearestKm: number; locationNoteKm: number | null }
   /** Near two or more occurrences at similar distances; none was chosen. */
@@ -63,7 +63,16 @@ function incidentsFor(matches: DetectionMatch[], byId: Map<string, OperationalIn
   return ids.map((id) => byId.get(id)).filter((entry): entry is OperationalIncident => Boolean(entry));
 }
 
-export function operationalStateForSelection(selection: OperationalSelection, feed: OperationalFeedSnapshot | null): SelectionOperationalState {
+/**
+ * `firmsGeneratedAt` is when the FIRMS snapshot the selection comes from was
+ * built. Without it, the detection's acquisition time is the best available
+ * evidence that it was compared.
+ */
+export function operationalStateForSelection(
+  selection: OperationalSelection,
+  feed: OperationalFeedSnapshot | null,
+  firmsGeneratedAt: string | null = null,
+): SelectionOperationalState {
   if (!isInOperationalCoverage(selection.location, selection.country)) return { kind: "not_covered" };
   if (!feed) return { kind: "unavailable" };
 
@@ -79,11 +88,14 @@ export function operationalStateForSelection(selection: OperationalSelection, fe
   if (ambiguous.length > 0) {
     return { kind: "ambiguous", incidents: incidentsFor(ambiguous, byId), nearestKm: Math.min(...ambiguous.map((match) => match.distanceKm)) };
   }
-  // Detections are acquired before the snapshot that holds them is built, so a
-  // detection acquired after the reconciled snapshot cannot have been compared.
+  // An unlinked detection was compared only if its FIRMS snapshot is no newer
+  // than the one reconciled. NASA publishes late, so a newer snapshot can hold
+  // detections acquired hours earlier that the reconciliation never saw.
   const reconciledUpTo = feed.fusedWith ? Date.parse(feed.fusedWith.firmsGeneratedAt) : Number.NEGATIVE_INFINITY;
-  if (!(Date.parse(selection.lastAcquiredAt) <= reconciledUpTo)) return { kind: "not_reconciled" };
-  return { kind: "none_nearby", radiusKm: MATCH_RULES.matchRadiusKm };
+  const shownSnapshotMs = firmsGeneratedAt ? Date.parse(firmsGeneratedAt) : Number.NaN;
+  const evidenceMs = Number.isFinite(shownSnapshotMs) ? shownSnapshotMs : Date.parse(selection.lastAcquiredAt);
+  if (!(evidenceMs <= reconciledUpTo)) return { kind: "not_reconciled" };
+  return { kind: "none_nearby", radiusKm: MATCH_RULES.matchRadiusKm, windowHours: MATCH_RULES.preReportWindowHours };
 }
 
 /** Every incident with its evidence, active first, then newest first. */

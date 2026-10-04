@@ -78,13 +78,27 @@ test("a detection between two incidents names both and picks neither", () => {
 });
 
 test("a covered detection with no incident nearby says so, with the radius used", () => {
-  assert.deepEqual(operationalStateForSelection(selection(["viseu"], 40.6566, -7.9125), feed()), { kind: "none_nearby", radiusKm: 5 });
+  assert.deepEqual(operationalStateForSelection(selection(["viseu"], 40.6566, -7.9125), feed()), { kind: "none_nearby", radiusKm: 5, windowHours: 6 });
 });
 
 test("a detection newer than the reconciled snapshot is not yet compared, rather than unmatched", () => {
   const older = feed({ fusedWith: { firmsGeneratedAt: new Date(NOW - 3 * HOUR).toISOString(), detections: 4 } });
   assert.deepEqual(operationalStateForSelection(selection(["new"], 40.6, -7.9, "Portugal", 1), older), { kind: "not_reconciled" });
   assert.deepEqual(operationalStateForSelection(selection(["new"], 40.6, -7.9), feed({ fusedWith: null })), { kind: "not_reconciled" });
+});
+
+test("a detection from a newer FIRMS snapshot than the one reconciled is not yet compared, however old it is", () => {
+  // NASA publishes late: a detection acquired three hours ago can first appear
+  // in a snapshot built after the last reconciliation.
+  const reconciledAt = new Date(NOW - 10 * 60_000).toISOString();
+  const newerSnapshot = new Date(NOW - 5 * 60_000).toISOString();
+  const old = selection(["late"], 40.6, -7.9, "Portugal", 3);
+  assert.deepEqual(operationalStateForSelection(old, feed(), newerSnapshot), { kind: "not_reconciled" });
+  assert.deepEqual(operationalStateForSelection(old, feed(), reconciledAt), { kind: "none_nearby", radiusKm: 5, windowHours: 6 });
+  // An older snapshot than the reconciled one was compared as part of it.
+  assert.equal(operationalStateForSelection(old, feed(), new Date(NOW - 70 * 60_000).toISOString()).kind, "none_nearby");
+  // Links found by the reconciliation stand whatever snapshot is shown.
+  assert.equal(operationalStateForSelection(selection(["arganil"], 40.2183, -8.0541), feed(), newerSnapshot).kind, "matched");
 });
 
 test("without the operational feed the state is unavailable, not 'no incident'", () => {

@@ -17,14 +17,14 @@ export interface DetectionOperationalView {
 }
 
 /** What the operational source says about a selected detection or cluster. */
-export function useDetectionOperationalState(selection: DetectionSelection): DetectionOperationalView {
+export function useDetectionOperationalState(selection: DetectionSelection, firmsGeneratedAt: string | null): DetectionOperationalView {
   const { feed, loadState, health } = useOperationalFeed();
   return useMemo(() => ({
     // While loading, say nothing definite yet: treat it like unavailable only once loading failed with no snapshot.
-    state: loadState === "loading" && !feed ? { kind: "not_reconciled" } : operationalStateForSelection(selection, feed),
+    state: loadState === "loading" && !feed ? { kind: "not_reconciled" } : operationalStateForSelection(selection, feed, firmsGeneratedAt),
     stale: health.state === "stale",
     staleSince: feed?.generatedAt ?? null,
-  }), [feed, health.state, loadState, selection]);
+  }), [feed, firmsGeneratedAt, health.state, loadState, selection]);
 }
 
 function place(incident: OperationalIncident): string {
@@ -85,7 +85,7 @@ export default function DetectionOperationalDetails({
           </div>
         </>
       )}
-      {state.kind === "none_nearby" && <p className={text}>{interpolate(t.operational.noneNearby, { radius: String(state.radiusKm) })}</p>}
+      {state.kind === "none_nearby" && <p className={text}>{interpolate(t.operational.noneNearby, { radius: String(state.radiusKm), window: String(state.windowHours) })}</p>}
       {state.kind === "not_reconciled" && <p className={text}>{t.operational.notReconciled}</p>}
       {state.kind === "not_covered" && <p className={text}>{t.operational.notCovered}</p>}
       {state.kind === "unavailable" && <p className={text}>{t.operational.unavailable}</p>}

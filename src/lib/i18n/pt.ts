@@ -169,9 +169,10 @@ const pt: Dictionary = {
   operational: {
     sourceTitle: "Ocorrências oficiais",
     sourceProvider: "ANEPC · Portugal continental",
-    sourceNote: "Incêndios rurais registados pela Proteção Civil, atualizados a cada 15 minutos.",
+    sourceNote: "Incêndios rurais registados pela Proteção Civil, atualizados de 15 em 15 minutos.",
     healthCurrent: "Atual",
     healthStale: "Pode estar desatualizado",
+    healthDegraded: "Atualização com falhas",
     healthUnavailable: "Indisponível",
     healthLoading: "A carregar",
     openFiresLabel: "Incêndios rurais em aberto",
@@ -181,6 +182,7 @@ const pt: Dictionary = {
     listEmpty: "Sem incêndios rurais em aberto registados neste momento.",
     staleNote: "Pode estar desatualizado: última atualização {time}.",
     unavailableNote: "As ocorrências oficiais estão indisponíveis de momento. Os dados de satélite não são afetados.",
+    degradedNote: "A última atualização falhou. A mostrar as ocorrências de {time}.",
     phase: {
       dispatch: "Em despacho",
       in_progress: "Em curso",
@@ -192,7 +194,7 @@ const pt: Dictionary = {
     matched: "Ocorrência oficial a {distance} km",
     locationNote: "A deteção de satélite mais próxima fica a {distance} km do local registado pela ANEPC.",
     ambiguous: "Esta deteção fica perto de mais do que uma ocorrência oficial, a distâncias semelhantes, por isso não é associada a nenhuma.",
-    noneNearby: "Não há nenhuma ocorrência oficial registada a menos de {radius} km. Nem todas as anomalias térmicas são incêndios: podem ser queimas autorizadas ou fontes de calor industriais.",
+    noneNearby: "Nenhuma ocorrência oficial associada. Só se associam ocorrências a menos de {radius} km que tenham começado, no máximo, {window} h depois desta deteção. Nem todas as anomalias térmicas são incêndios: podem ser queimas autorizadas ou fontes de calor industriais.",
     notReconciled: "Ainda não foi comparada com as ocorrências oficiais. Volte a consultar dentro de alguns minutos.",
     notCovered: "Nenhuma fonte operacional cobre esta zona.",
     unavailable: "A informação operacional está indisponível de momento. Os dados de satélite não são afetados.",

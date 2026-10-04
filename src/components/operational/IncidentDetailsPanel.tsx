@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { LOCATION_NOTE_KM } from "@/lib/fusion/reconcile";
+import { LOCATION_NOTE_KM, MATCH_RULES } from "@/lib/fusion/reconcile";
 import { interpolate } from "@/lib/i18n/dictionaries";
 import { formatDateTime, formatDecimal, formatUtcDateTime } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
@@ -124,6 +124,8 @@ function IncidentBody({ view }: { view: IncidentView }) {
 
 function SatelliteEvidence({ view }: { view: IncidentView }) {
   const { locale, t } = useLocale();
+  const { feed } = useOperationalFeed();
+  const recentHours = feed?.reconciliation.rules.recentDetectionHours ?? MATCH_RULES.recentDetectionHours;
   const { evidence } = view;
   const hasLinks = Boolean(evidence && evidence.matchedDetectionIds.length > 0);
   const ambiguousCount = evidence?.ambiguousDetectionIds.length ?? 0;
@@ -140,7 +142,7 @@ function SatelliteEvidence({ view }: { view: IncidentView }) {
             {evidence.nearestDetectionKm !== null && <Stat label={t.operational.nearestLabel} value={`${formatDecimal(evidence.nearestDetectionKm, locale)} km`} />}
           </dl>
           {evidence.satellite === "earlier" && (
-            <p className="mt-2 text-xs leading-5 text-foreground/70">{interpolate(t.operational.satelliteEarlier, { hours: "12" })}</p>
+            <p className="mt-2 text-xs leading-5 text-foreground/70">{interpolate(t.operational.satelliteEarlier, { hours: String(recentHours) })}</p>
           )}
           {evidence.nearestDetectionKm !== null && evidence.nearestDetectionKm > LOCATION_NOTE_KM && (
             <p className="mt-2 text-xs leading-5 text-foreground/70">

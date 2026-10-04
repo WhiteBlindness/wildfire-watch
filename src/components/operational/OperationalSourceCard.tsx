@@ -22,11 +22,13 @@ export default function OperationalSourceCard({ onSelectIncident }: { onSelectIn
   const { feed, health } = useOperationalFeed();
   const views = useMemo(() => incidentViews(feed), [feed]);
   const shown = views.slice(0, LIST_LIMIT);
-  const warning = health.state === "stale" ? "border-amber-400/35 bg-amber-500/8"
+  const warning = health.state === "stale" || health.state === "degraded" ? "border-amber-400/35 bg-amber-500/8"
     : health.state === "unavailable" ? "border-red-400/35 bg-red-500/8" : "border-border/60 bg-surface-muted/35";
   const message = health.state === "stale" && feed
     ? interpolate(t.operational.staleNote, { time: formatDateTime(feed.generatedAt, locale) })
-    : health.state === "unavailable" ? t.operational.unavailableNote : null;
+    : health.state === "degraded" && feed
+      ? interpolate(t.operational.degradedNote, { time: formatDateTime(feed.generatedAt, locale) })
+      : health.state === "unavailable" ? t.operational.unavailableNote : null;
 
   return (
     <section aria-labelledby="operational-source-title" data-testid="operational-source" className={`rounded-xl border p-3.5 backdrop-blur-xl ${warning}`}>

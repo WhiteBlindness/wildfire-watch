@@ -264,10 +264,17 @@ interface FireMapProps {
 
 export default function FireMap({ detections, allDetections, selection, onSelect, onMapLoad, onRendererUnavailable, selectedIncidentId, onSelectIncident, theme, basemapMode, countryScope, timelineHour }: FireMapProps) {
   const { feed: operationalFeed } = useOperationalFeed();
+  // Primitives, so a feed refresh that re-creates the same occurrence does not
+  // look like a new location to the camera effect.
+  const selectedIncident = operationalFeed?.incidents.find((incident) => incident.id === selectedIncidentId);
+  const incidentLat = selectedIncident?.location.lat ?? null;
+  const incidentLng = selectedIncident?.location.lng ?? null;
   const selectedIncidentLocation = useMemo(
-    () => operationalFeed?.incidents.find((incident) => incident.id === selectedIncidentId)?.location ?? null,
-    [operationalFeed, selectedIncidentId],
+    () => (incidentLat !== null && incidentLng !== null ? { lat: incidentLat, lng: incidentLng } : null),
+    [incidentLat, incidentLng],
   );
+  /** The occurrence the camera last flew to, so it flies once per selection. */
+  const flownIncidentRef = useRef<string | null>(null);
   const mapRef = useRef<MapRef>(null);
   const hasReportedMapLoadRef = useRef(false);
   const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
@@ -729,10 +736,22 @@ export default function FireMap({ detections, allDetections, selection, onSelect
     if (!map) return;
 
     if (selection?.kind === "cluster") return;
+    // An occurrence is flown to once. Later refreshes, including one in which
+    // it closes, leave the camera where the visitor put it.
+    if (selectedIncidentId) {
+      if (selectedIncidentLocation && flownIncidentRef.current !== selectedIncidentId) {
+        flownIncidentRef.current = selectedIncidentId;
+        try {
+          flyToLocation(map, selectedIncidentLocation, INCIDENT_ZOOM, true);
+        } catch {
+          // Stale/torn-down map instance — nothing to recover, just skip.
+        }
+      }
+      return;
+    }
+    flownIncidentRef.current = null;
     try {
-      if (selectedIncidentLocation) {
-        flyToLocation(map, selectedIncidentLocation, INCIDENT_ZOOM, true);
-      } else if (selection?.kind === "detection") {
+      if (selection?.kind === "detection") {
         flyToLocation(map, selection.location, FIRE_DETAIL_ZOOM, true);
       } else if (countryScope !== "global" && detections.length > 0) {
         if (detections.length === 1) {
@@ -759,7 +778,7 @@ export default function FireMap({ detections, allDetections, selection, onSelect
     } catch {
       // Stale/torn-down map instance — nothing to recover, just skip.
     }
-  }, [countryScope, detections, selection?.id, selection?.kind, selection?.location, selectedIncidentLocation]);
+  }, [countryScope, detections, selection?.id, selection?.kind, selection?.location, selectedIncidentId, selectedIncidentLocation]);
 
   return (
     <div

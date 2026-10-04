@@ -11,13 +11,13 @@ export function PhaseBadge({ phase, sourceLabel }: { phase: OperationalPhase; so
   return (
     <span
       data-phase={phase}
-      className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] ring-1 ring-inset ${
+      className={`inline-flex min-w-0 max-w-[11rem] shrink-0 items-center truncate rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] ring-1 ring-inset ${
         active
           ? "bg-sky-500/10 text-sky-800 ring-sky-600/40 dark:text-sky-200 dark:ring-sky-300/40"
           : "bg-background/60 text-foreground ring-border/70"
       }`}
     >
-      {phase === "other" ? sourceLabel : t.operational.phase[phase]}
+      {phase === "other" ? <span className="truncate" title={sourceLabel}>{sourceLabel}</span> : t.operational.phase[phase]}
     </span>
   );
 }
@@ -28,11 +28,13 @@ export function OperationalHealthBadge({ state }: { state: FeedHealthAssessment[
   const label = state === "loading"
     ? t.operational.healthLoading
     : state === "unavailable" ? t.operational.healthUnavailable
-      : state === "stale" ? t.operational.healthStale : t.operational.healthCurrent;
-  const tone = state === "stale"
+      : state === "stale" ? t.operational.healthStale
+        : state === "degraded" ? t.operational.healthDegraded : t.operational.healthCurrent;
+  const warning = state === "stale" || state === "degraded";
+  const tone = warning
     ? "text-amber-700 dark:text-amber-200"
     : state === "unavailable" ? "text-red-700 dark:text-red-200" : "text-foreground/70";
-  const dot = state === "stale" ? "bg-amber-400" : state === "unavailable" ? "bg-red-400" : "bg-sky-500";
+  const dot = warning ? "bg-amber-400" : state === "unavailable" ? "bg-red-400" : "bg-sky-500";
   return (
     <span
       aria-live="polite"
