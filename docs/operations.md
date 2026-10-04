@@ -69,7 +69,7 @@ The query asks for every field and filters locally, because the layer's field na
 | Encerrada, Fechada | dropped | not shown |
 | anything else (for example "Chegada ao TO") | `other` | ANEPC's own label |
 
-**Safeguards.** A 20-second timeout, a 4 MiB cap on the response (declared and actual), an identifying `User-Agent`, and schema checks: a response with no nature codes, or where every rural-fire record is unreadable, is a `parse_error`, not an empty list. Any failure keeps the last good snapshot and records a safe error code (`network`, `http_error` or `parse_error`); upstream response text is never stored or sent. A response flagged as truncated (`exceededTransferLimit`) is kept but counted for the daily summary.
+**Safeguards.** A 20-second timeout, a 4 MiB cap on the response (checked against `Content-Length` and enforced while the body streams), an identifying `User-Agent`, and schema checks. An empty layer is `incomplete_feed`: the layer lists every kind of open occurrence (road accidents and rescues too), so an empty response is far likelier a fault than a quiet country. A response with no nature codes, or where three or more rural-fire records arrive and none is readable, is a `parse_error`; one or two unreadable records are dropped and counted. Any failure keeps the last good snapshot and records a safe error code (`network`, `http_error`, `incomplete_feed`, `parse_error`, `storage_error` or `unknown`); upstream response text is never stored or sent. A response flagged as truncated (`exceededTransferLimit`) is kept but counted for the daily summary.
 
 **Coverage.** Mainland Portugal (the layer excludes the Azores and Madeira). A detection is compared with ANEPC only when its inferred country is Portugal and it lies inside the box 36.9–42.2° N, 9.6–6.1° W; anywhere else the panel says no operational source covers the area.
 
@@ -104,10 +104,12 @@ Incidents are bucketed in 0.1° cells so each detection is only measured against
 | Several detections, one occurrence | Each detection links to it | Count of linked detections, newest first |
 | Linked, but more than 2 km from the registered place | Same, with the distance noted | Same note |
 | Two occurrences about as close | "Unknown" status, both occurrences listed, neither chosen | "Nearby detections at similar distances from this and another occurrence" |
-| Covered, no occurrence within 5 km | "No official occurrence within 5 km", and that a thermal anomaly is not always a fire | n/a |
+| Covered, no occurrence linked | "No linked official occurrence", with the rule (within 5 km, started no more than 6 h after the detection), and that a thermal anomaly is not always a fire | n/a |
+| Detection from a newer FIRMS snapshot than the one reconciled | "Not yet compared with official occurrences" (NASA publishes late, so even an old detection can be new to the reconciliation) | n/a |
 | Occurrence with no detection | n/a | "No linked satellite detection" and why that can happen (clouds, small or new fires, overpass gaps) |
 | Outside mainland Portugal | "No operational source covers this area" | n/a |
-| Operational data out of date | Shown, with "may be out of date: last update …" | Same |
+| Latest operational refresh failed | The card's badge reads "Refresh failing" with the time of the occurrences shown | Same data, unchanged |
+| Operational data out of date | Shown, with "may be out of date: last update …"; the map rings fade | Same |
 | Operational source unavailable | "Operational information unavailable; satellite data unaffected" | The last snapshot received in this visit stays, labelled; an occurrence no longer listed says so |
 | FIRMS out of date | The FIRMS badge says so; the reconciliation used the last snapshot it had | Same |
 
@@ -167,12 +169,12 @@ Once a day, from 07:00 UTC, the hourly run looks at counters accumulated since t
 | Reported when | Example line |
 |---|---|
 | 2 or more failures recovered before they reached the alert threshold | `ANEPC: 3 failed attempts, 2 recovered before an alert` |
-| 3 or more upstream responses slower than 20 s | `NASA FIRMS: 4 slow upstream responses (over 20 s)` |
-| any records dropped as unreadable | `ANEPC: 2 records dropped as unreadable` |
+| 3 or more upstream responses slower than 20 s | `FIRMS: 4 slow upstream responses (over 20 s)` |
+| any records dropped as unreadable (the most in one run, since the same bad record is read on every run) | `ANEPC: up to 2 records per run dropped as unreadable` |
 | any truncated responses | `ANEPC: 1 truncated responses (records may be missing)` |
 | any phase label WildfireWatch does not recognise | `ANEPC: unrecognised phase labels: Chegada ao TO` |
 
-With nothing to report, nothing is sent. Either way the counters restart and the day is marked as summarised, so a summary is never repeated. Anything urgent has already gone out as an immediate alert and is not repeated here.
+With nothing to report, nothing is sent. Either way the counters restart and the day is marked as summarised. The day is recorded before anything is sent, and if that record cannot be read or written (for example when the daily KV write limit has been reached) nothing is sent: a summary can be lost, never repeated. Anything urgent has already gone out as an immediate alert and is not repeated here.
 
 ### What messages contain
 
@@ -212,7 +214,7 @@ Everything runs on the Workers Free plan. No paid feature is enabled.
 | Cron Triggers | 5 per account | 2 schedules: `0 * * * *` (FIRMS, then ANEPC, then the daily summary) and `15,30,45 * * * *` (ANEPC) |
 | KV writes | 1 000/day, account-wide | about **291/day** when everything succeeds: FIRMS 4 per run (snapshot, health, recurrence history, fusion index) × 24 = 96; ANEPC 2 per run (snapshot, health) × 96 = 192; daily summary 3. A failed run writes 1 (its health record), +1 when a stall alert is recorded. User routes: 0 |
 | KV reads | 100 000/day | scheduled runs: about 270/day; `/api/fires` and `/api/incidents`: ≤ 2 per minute per isolate each |
-| Worker requests | 100 000/day | page loads, API calls and 120 scheduled runs a day; static assets are free |
+| Worker requests | 100 000/day | page loads, API calls and 96 scheduled invocations a day (24 hourly, 72 quarter-hour); static assets are free |
 | CPU time | 10 ms per request and per cron run | see below |
 | Subrequests | 50 external per invocation | top-of-hour run: 1 FIRMS + 1 ANEPC call + alert calls (at most 2 per message); quarter-hour runs: 1 ANEPC call + alerts |
 
