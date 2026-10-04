@@ -15,7 +15,7 @@ export default function TopBar({ basemapMode, onBasemapChange, showBasemapToggle
       <div className="mission-brand-chip pointer-events-auto flex h-11 w-11 items-center justify-center gap-2 rounded-full border border-neutral-200 bg-white/90 shadow-lg backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/90">
         <span className="h-2 w-2 rounded-full bg-red-500" />
         <h1 className="mission-brand-label sr-only text-sm font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
-          Wildfire<span className="text-red-500">Watch</span>
+          Wildfire<span className="text-red-600 dark:text-red-500">Watch</span>
         </h1>
       </div>
       <div className="mission-top-controls pointer-events-auto flex items-center gap-2">

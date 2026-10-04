@@ -124,6 +124,8 @@ export default function HomeClient() {
 
   const handleMapUnavailable = useCallback(() => {
     setMapStatus("unavailable");
+    // The timeline is hidden with the map; a running playback would keep re-rendering.
+    setIsTimelinePlaying(false);
   }, []);
 
   function handleMapSelect(next: DetectionSelection | null): void {
@@ -165,10 +167,10 @@ export default function HomeClient() {
       </a>
       {/* Keep MapLibre mounted under the branded lifecycle layer so it can
           measure the viewport and finish style work while data is pending.
-          If it cannot draw on this device, it stays mounted but hidden, so it
-          is never retried. */}
+          If it cannot draw on this device it is hidden, not unmounted: a map
+          that failed after loading is left alone rather than torn down. */}
       <div
-        className={`wildfire-watch-map absolute inset-0 z-0 transition-opacity duration-[400ms] motion-reduce:duration-0 ${isInitialLoading ? "opacity-0" : "opacity-100"} ${isMapUnavailable ? "invisible" : ""}`}
+        className={`wildfire-watch-map absolute inset-0 z-0 transition-opacity duration-[400ms] motion-reduce:duration-0 ${isInitialLoading ? "opacity-0" : "opacity-100"} ${isMapUnavailable ? "hidden" : ""}`}
       >
         <FireMap
           detections={scopedDetections}
@@ -188,21 +190,30 @@ export default function HomeClient() {
       {!isInitialLoading && !isMapUnavailable && feedState === "error" && (
         <MapLoadingState mode="error" onRetry={handleFeedRetry} />
       )}
-      {!isInitialLoading && isMapUnavailable && (
-        <div className="pointer-events-none absolute inset-x-0 top-24 z-20 flex flex-col items-center gap-3 px-4 md:inset-y-0 md:right-[416px] md:top-0 md:justify-center">
-          {feedState === "error" && (
-            <MapLoadingState
-              mode="error"
-              placement="inline"
-              description={t.map.errorDescriptionWithoutMap}
-              onRetry={handleFeedRetry}
-            />
-          )}
-          <MapUnavailableNotice hasData={feedState !== "error"} onShowList={() => setIsPanelMinimized(false)} />
-        </div>
-      )}
 
       <TopBar basemapMode={basemapMode} onBasemapChange={setBasemapMode} showBasemapToggle={!isMapUnavailable} />
+
+      {/* Persistent, so the change is announced when the notice appears. */}
+      <p aria-live="polite" className="sr-only">
+        {!isInitialLoading && isMapUnavailable ? t.map.unavailableTitle : ""}
+      </p>
+      {!isInitialLoading && isMapUnavailable && (
+        // The map is not drawn, so this layer may take pointer events and scroll
+        // when zoomed text or a stacked feed error does not fit.
+        <div className="absolute inset-x-0 bottom-20 top-20 z-20 flex flex-col overflow-y-auto px-4 py-2 md:inset-y-0 md:right-[416px]">
+          <div className="mx-auto flex w-full max-w-[28rem] flex-col gap-3 md:my-auto">
+            {feedState === "error" && (
+              <MapLoadingState
+                mode="error"
+                placement="inline"
+                description={t.map.errorDescriptionWithoutMap}
+                onRetry={handleFeedRetry}
+              />
+            )}
+            <MapUnavailableNotice hasData={feedSnapshot !== null} onShowList={() => setIsPanelMinimized(false)} />
+          </div>
+        </div>
+      )}
 
       {/* The timeline and legend only act on the map. */}
       {!isMapUnavailable && (

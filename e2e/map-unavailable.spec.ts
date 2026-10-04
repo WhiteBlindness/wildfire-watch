@@ -58,6 +58,7 @@ test("the map area says the interactive map is unavailable, and the data, detail
   await expect(notice(page).getByRole("heading", { name: pt.map.unavailableTitle })).toBeVisible();
   await expect(notice(page)).toContainText(pt.map.unavailableDescription);
   await expect(notice(page)).toContainText(pt.map.unavailableDataNote);
+  await expect(page.locator('[aria-live="polite"]').filter({ hasText: pt.map.unavailableTitle }), "the change is announced").toHaveCount(1);
   await expect(page.getByTestId("map-loading-state")).toHaveCount(0);
   await expect(page.getByText(pt.map.loadingLabel)).toHaveCount(0);
 
@@ -73,7 +74,13 @@ test("the map area says the interactive map is unavailable, and the data, detail
   await expect(page.getByRole("group", { name: pt.topBar.languageToggleLabel })).toBeVisible();
   await expect(page.getByRole("navigation", { name: pt.legal.navLabel })).toBeVisible();
 
-  expect(await axeViolations(page), "global overview without a map").toEqual([]);
+  expect(await axeViolations(page), "global overview without a map, dark theme").toEqual([]);
+  // The theme is remembered; reloading checks the light theme without its colour transition in flight.
+  await page.getByRole("switch", { name: pt.topBar.themeToggleLabel }).click();
+  await page.reload();
+  await expect(page.locator("html")).not.toHaveClass(/\bdark\b/);
+  await expect(notice(page)).toBeVisible();
+  expect(await axeViolations(page), "global overview without a map, light theme").toEqual([]);
 
   await page.getByRole("button", { name: /912,4 MW/ }).click();
   await expect(page.getByRole("heading", { name: pt.fireDetail.pointTitle })).toBeVisible();
@@ -107,6 +114,7 @@ test("on a 390 px phone the notice fits and opens the collapsed panel", async ({
   await expectNoHorizontalOverflow(page);
 
   await notice(page).getByRole("link", { name: pt.map.unavailableShowList }).click();
+  await expect(page.locator("#mission-control-panel-content")).toBeFocused();
   await expect(page.getByRole("heading", { name: pt.overview.strongestTitle })).toBeVisible();
   await page.getByRole("button", { name: /912,4 MW/ }).click();
   await expect(page.getByRole("heading", { name: pt.fireDetail.pointTitle })).toBeVisible();
