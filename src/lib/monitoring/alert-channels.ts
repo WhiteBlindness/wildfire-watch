@@ -124,11 +124,15 @@ export function formatAlertText(alert: IngestAlert): string {
   return lines.join("\n");
 }
 
-/** Sends every alert to every configured channel. Never throws. */
+/** Sends every alert to every configured channel, as one message. Never throws. */
 export async function deliverAlerts(alerts: IngestAlert[], channels: AlertChannel[]): Promise<AlertDelivery[]> {
-  if (alerts.length === 0 || channels.length === 0) return [];
-  const text = alerts.map(formatAlertText).join("\n\n");
+  if (alerts.length === 0) return [];
+  return deliverText(alerts.map(formatAlertText).join("\n\n"), channels);
+}
 
+/** Sends one message, built only from typed fields, to every configured channel. Never throws. */
+export async function deliverText(text: string, channels: AlertChannel[]): Promise<AlertDelivery[]> {
+  if (channels.length === 0) return [];
   return Promise.all(channels.map(async (channel): Promise<AlertDelivery> => {
     try {
       const response = await channel.send(text, AbortSignal.timeout(ALERT_TIMEOUT_MS));
