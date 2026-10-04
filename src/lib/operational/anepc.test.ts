@@ -149,10 +149,21 @@ test("incidents are ordered newest first, then by identifier, so snapshots are r
   assert.deepEqual(result.incidents.map((incident) => incident.sourceId), ["c", "a", "b"]);
 });
 
-test("an empty list is valid: no open rural fires", () => {
-  const result = parseAnepcOccurrences(body([]), NOW);
+test("no rural fire among the open occurrences is a valid, empty list", () => {
+  const result = parseAnepcOccurrences(body([feature({ CodNatureza: "2101", Natureza: "Acidente" })]), NOW);
   assert.deepEqual(result.incidents, []);
-  assert.deepEqual(result.counts, { sourceRows: 0, filteredRows: 0, selectedPoints: 0 });
+  assert.deepEqual(result.counts, { sourceRows: 1, filteredRows: 0, selectedPoints: 0 });
+});
+
+test("an empty layer fails the run, so one bad response cannot erase every occurrence", () => {
+  // The layer lists road accidents and rescues too: an empty list is a fault, not a quiet country.
+  assert.throws(() => parseAnepcOccurrences(body([]), NOW), (error: unknown) => error instanceof AnepcFeedError && error.code === "incomplete_feed");
+});
+
+test("one or two unreadable rural-fire records are dropped and counted, not fatal", () => {
+  const result = parseAnepcOccurrences(body([feature({ Numero: undefined, ID_oc: undefined }), feature({ CodNatureza: "2101" })]), NOW);
+  assert.deepEqual(result.incidents, []);
+  assert.equal(result.quality.invalidRecords, 1);
 });
 
 test("a truncated response is flagged", () => {
@@ -166,6 +177,6 @@ test("an ArcGIS error body or a changed schema fails the run instead of publishi
   const renamed = body([{ attributes: { NumeroOcorrencia: "1", Estado: "Em Curso" } }, { attributes: { NumeroOcorrencia: "2" } }]);
   assert.throws(() => parseAnepcOccurrences(renamed, NOW), (error: unknown) => error instanceof AnepcFeedError && error.code === "parse_error");
   // Rural fires arrive but none is usable.
-  const unusable = body([feature({ Numero: undefined, ID_oc: undefined }), feature({ Numero: undefined, ID_oc: undefined })]);
+  const unusable = body([1, 2, 3].map(() => feature({ Numero: undefined, ID_oc: undefined })));
   assert.throws(() => parseAnepcOccurrences(unusable, NOW), (error: unknown) => error instanceof AnepcFeedError && error.code === "parse_error");
 });

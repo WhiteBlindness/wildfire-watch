@@ -109,13 +109,30 @@ test("with no detections available the incidents are still stored, honestly unre
   }
 });
 
+/** A body that would grow past 5 MiB, in 1 MiB chunks, without declaring its length. */
+function oversizedStream(): ReadableStream<Uint8Array> {
+  let sent = 0;
+  return new ReadableStream({
+    pull(controller) {
+      if (sent >= 5) return controller.close();
+      sent += 1;
+      controller.enqueue(new Uint8Array(1024 * 1024).fill(0x20));
+    },
+  });
+}
+
 test("failures keep the last good snapshot and are classified without upstream text", async () => {
   for (const [response, code] of [
     [() => new Response("Service Unavailable", { status: 503 }), "http_error"],
     [() => new Response(JSON.stringify({ error: { code: 400, message: "Invalid query" } }), { status: 200 }), "http_error"],
     [() => new Response("<html>maintenance</html>", { status: 200 }), "parse_error"],
     [() => new Response(JSON.stringify({ features: [{ attributes: { Renamed: "1" } }] }), { status: 200 }), "parse_error"],
+    [() => new Response(JSON.stringify({ features: [] }), { status: 200 }), "incomplete_feed"],
+    // Over 4 MiB with no Content-Length: the stream is cut off, not buffered whole.
+    [() => new Response(oversizedStream(), { status: 200 }), "parse_error"],
     [() => { throw new TypeError("fetch failed"); }, "network"],
+    [() => { throw new DOMException("The operation timed out.", "TimeoutError"); }, "network"],
+    [() => { throw new RangeError("a bug, not the network"); }, "unknown"],
   ] as const) {
     const kv = new FakeKv();
     kv.store.set(INCIDENTS_CACHE_KEY, "previous-snapshot");

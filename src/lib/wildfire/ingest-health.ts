@@ -48,7 +48,7 @@ export interface IngestSignals {
   failedAttempts: number;
   /** Outages that ended before the failure alert threshold. */
   recoveredBeforeAlert: number;
-  /** Records dropped because they could not be read. */
+  /** The most records dropped as unreadable in a single run (not a sum: one bad record is read on every run). */
   invalidRecords: number;
   /** Responses that said more records existed than were returned. */
   truncatedResponses: number;

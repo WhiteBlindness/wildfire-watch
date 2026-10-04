@@ -79,8 +79,18 @@ test("a day with recurring or data-quality signals sends one compact summary", (
   const text = formatDigestText(digest, T0 + 24 * 3_600_000);
   assert.match(text, /^WildfireWatch · Daily operations summary/);
   assert.match(text, /ANEPC: 2 failed attempts, 2 recovered before an alert/);
-  assert.match(text, /ANEPC: 3 records dropped as unreadable/);
+  assert.match(text, /ANEPC: up to 3 records per run dropped as unreadable/);
   assert.match(text, /ANEPC: unrecognised phase labels: Chegada ao TO/);
   assert.match(text, /FIRMS: 4 slow upstream responses/);
   assert.doesNotMatch(text, /https?:|token/i);
+});
+
+test("one unreadable record read on every run counts once, and stored labels are plain words", () => {
+  const record = runAll([
+    { outcome: "success", invalidRecords: 1 },
+    { outcome: "success", invalidRecords: 1, unrecognisedPhases: ["Chegada <b>ao</b> TO"] },
+    { outcome: "success", invalidRecords: 1 },
+  ]);
+  assert.equal(record.signals?.invalidRecords, 1);
+  assert.deepEqual(record.signals?.unrecognisedPhases, ["Chegada bao/b TO"]);
 });

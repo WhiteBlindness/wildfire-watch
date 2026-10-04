@@ -77,10 +77,33 @@ class AnepcIngestFailure extends Error {
   }
 }
 
+/** fetch() rejects with a TypeError; a timeout aborts with one of these names. */
+const NETWORK_ERROR_NAMES = new Set(["TypeError", "AbortError", "TimeoutError"]);
+
 function classify(error: unknown): IngestErrorCode {
   if (error instanceof AnepcIngestFailure || error instanceof AnepcFeedError) return error.code;
-  // fetch failures, timeouts and aborts; their messages are never stored.
-  return "network";
+  // Only the error's name is inspected; messages are never stored.
+  return error instanceof Error && NETWORK_ERROR_NAMES.has(error.name) ? "network" : "unknown";
+}
+
+/** Reads the body as text, stopping as soon as it passes the cap, whatever Content-Length said. */
+async function readCappedText(body: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  const parts: string[] = [];
+  let bytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > MAX_RESPONSE_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new AnepcIngestFailure("parse_error");
+    }
+    parts.push(decoder.decode(value, { stream: true }));
+  }
+  parts.push(decoder.decode());
+  return parts.join("");
 }
 
 async function readHealth(kv: KvNamespace): Promise<IngestHealthRecord | null> {
@@ -120,8 +143,8 @@ async function fetchOccurrences(now: number): Promise<AnepcParseResult> {
     await response.body?.cancel().catch(() => undefined);
     throw new AnepcIngestFailure("parse_error");
   }
-  const text = await response.text();
-  if (text.length > MAX_RESPONSE_BYTES) throw new AnepcIngestFailure("parse_error");
+  if (!response.body) throw new AnepcIngestFailure("parse_error");
+  const text = await readCappedText(response.body);
   let body: unknown;
   try {
     body = JSON.parse(text);

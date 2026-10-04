@@ -10,11 +10,15 @@ const MAP_KEY = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4";
 
 class FakeKv {
   readonly store = new Map<string, string>();
+  readonly failingReads = new Set<string>();
+  readonly failingWrites = new Set<string>();
   async get(key: string, type?: "json"): Promise<unknown> {
+    if (this.failingReads.has(key)) throw new Error("KV read failed");
     const value = this.store.get(key) ?? null;
     return type === "json" && value !== null ? JSON.parse(value) : value;
   }
   async put(key: string, value: string): Promise<void> {
+    if (this.failingWrites.has(key)) throw new Error("KV put() limit exceeded for the day");
     this.store.set(key, value);
   }
 }
@@ -153,4 +157,30 @@ test("the daily summary is sent once, only with something to report, and starts 
   for (const at of quarters(7, 9).slice(1)) await runAt(at);
   assert.equal(sent.length, 1);
   assert.equal(health(kv, INCIDENTS_INGEST_HEALTH_KEY)?.signals?.failedAttempts, 0);
+});
+
+test("the daily summary is never repeated when its state cannot be read or written", async () => {
+  const at = Date.parse("2026-08-12T07:00:00.000Z");
+  for (const failure of ["read", "write"] as const) {
+    const sent: string[] = [];
+    const channel: AlertChannel = { name: "telegram", send: async (text) => { sent.push(text); return new Response(null, { status: 200 }); } };
+    const kv = new FakeKv();
+    // Something worth reporting is waiting.
+    kv.store.set(INCIDENTS_INGEST_HEALTH_KEY, JSON.stringify({
+      version: 2, attemptedAt: new Date(at - 15 * 60_000).toISOString(), outcome: "success", consecutiveFailures: 0,
+      lastSuccessAt: new Date(at - 15 * 60_000).toISOString(),
+      signals: { since: new Date(at - 24 * 3_600_000).toISOString(), failedAttempts: 0, recoveredBeforeAlert: 0, invalidRecords: 4, truncatedResponses: 0, unrecognisedPhases: [], slowAttempts: 0 },
+    }));
+    (failure === "read" ? kv.failingReads : kv.failingWrites).add(DIGEST_STATE_KEY);
+    for (const hour of [0, 1, 2]) {
+      const now = at + hour * 3_600_000;
+      const upstreams = withUpstreams({ firms: "up", anepc: "up" }, now);
+      try {
+        await runScheduled(FIRMS_CRON, env(kv), { now: () => now, channels: [channel] });
+      } finally {
+        upstreams.restore();
+      }
+    }
+    assert.deepEqual(sent.filter((text) => /Daily operations summary/.test(text)), [], failure);
+  }
 });

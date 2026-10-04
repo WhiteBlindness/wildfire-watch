@@ -44,8 +44,10 @@ const FUTURE_TOLERANCE_MS = 60 * 60 * 1_000;
 const MAX_TEXT_LENGTH = 80;
 const MAX_COUNT = 10_000;
 const MAX_UNRECOGNISED_PHASES = 10;
+/** Rural-fire rows needed before "none of them is readable" means the schema changed. */
+const MIN_ROWS_FOR_SCHEMA_CHECK = 3;
 
-export type AnepcFeedErrorCode = "http_error" | "parse_error";
+export type AnepcFeedErrorCode = "http_error" | "incomplete_feed" | "parse_error";
 
 export class AnepcFeedError extends Error {
   constructor(readonly code: AnepcFeedErrorCode) {
@@ -237,10 +239,15 @@ export function parseAnepcOccurrences(body: unknown, now: number): AnepcParseRes
   }
 
   const sourceRows = response.features.length;
+  // The layer lists every kind of open occurrence in mainland Portugal (road
+  // accidents, rescues, fires), so an empty list is far likelier a service
+  // fault than a quiet country. Failing keeps the last good snapshot.
+  if (sourceRows === 0) throw new AnepcFeedError("incomplete_feed");
   // Rows arrived but no nature code could be read: the layer's fields changed.
-  if (sourceRows > 0 && rowsWithCode === 0) throw new AnepcFeedError("parse_error");
-  // Rural fires arrived but not one could be read.
-  if (filteredRows > 0 && invalidRecords === filteredRows) throw new AnepcFeedError("parse_error");
+  if (rowsWithCode === 0) throw new AnepcFeedError("parse_error");
+  // Several rural fires arrived and not one could be read. One or two bad
+  // records are dropped and counted instead, so they cannot stop the refresh.
+  if (filteredRows >= MIN_ROWS_FOR_SCHEMA_CHECK && invalidRecords === filteredRows) throw new AnepcFeedError("parse_error");
 
   const incidents = [...byId.values()].sort(compareIncidents);
   return {

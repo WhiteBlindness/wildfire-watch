@@ -58,22 +58,29 @@ async function resetSignals(env: ScheduledEnv, key: string, record: IngestHealth
   await env.FIRMS_CACHE.put(key, JSON.stringify({ ...record, signals: emptySignals(new Date(now).toISOString()) })).catch(() => undefined);
 }
 
+/**
+ * At most once a day: the day is recorded before anything is sent, and if
+ * that record cannot be read or written (for example when the daily KV write
+ * limit is reached) nothing is sent. A summary can be lost, never repeated.
+ */
 async function runDigest(env: ScheduledEnv, channels: AlertChannel[], now: number): Promise<boolean> {
-  let lastPlannedAt: string | null = null;
+  let lastPlannedAt: string | null;
   try {
     const state = await env.FIRMS_CACHE.get<{ lastPlannedAt?: unknown }>(DIGEST_STATE_KEY, "json");
     lastPlannedAt = typeof state?.lastPlannedAt === "string" ? state.lastPlannedAt : null;
   } catch {
-    lastPlannedAt = null;
+    return false;
   }
   if (!isDigestDue(lastPlannedAt, now)) return false;
 
   const [firms, anepc] = await Promise.all([readHealth(env, FIRMS_INGEST_HEALTH_KEY), readHealth(env, INCIDENTS_INGEST_HEALTH_KEY)]);
   const plan = planDigest([{ source: "firms", signals: firms?.signals }, { source: "anepc", signals: anepc?.signals }]);
+  try {
+    await env.FIRMS_CACHE.put(DIGEST_STATE_KEY, JSON.stringify({ version: 1, lastPlannedAt: new Date(now).toISOString() }));
+  } catch {
+    return false;
+  }
   if (plan) await deliverText(formatDigestText(plan, now), channels);
-
-  // Record the plan first: a failed reset must not resend the same summary.
-  await env.FIRMS_CACHE.put(DIGEST_STATE_KEY, JSON.stringify({ version: 1, lastPlannedAt: new Date(now).toISOString() })).catch(() => undefined);
   await resetSignals(env, FIRMS_INGEST_HEALTH_KEY, firms, now);
   await resetSignals(env, INCIDENTS_INGEST_HEALTH_KEY, anepc, now);
   return plan !== null;

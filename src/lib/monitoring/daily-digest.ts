@@ -44,12 +44,14 @@ export function accumulateSignals(previous: IngestHealthRecord | null, run: RunO
   const quietRecovery = run.outcome === "success"
     && (previous?.consecutiveFailures ?? 0) > 0
     && !previous?.alerts?.failureNotifiedAt;
-  const phases = [...new Set([...base.unrecognisedPhases, ...(run.unrecognisedPhases ?? [])])].sort().slice(0, MAX_PHASES);
+  // Labels come from a public feed: they are reduced to plain words before they are stored.
+  const phases = [...new Set([...base.unrecognisedPhases, ...(run.unrecognisedPhases ?? []).map(safeLabel)])]
+    .filter(Boolean).sort().slice(0, MAX_PHASES);
   return {
     since: base.since,
     failedAttempts: base.failedAttempts + (run.outcome === "failure" ? 1 : 0),
     recoveredBeforeAlert: base.recoveredBeforeAlert + (quietRecovery ? 1 : 0),
-    invalidRecords: base.invalidRecords + (run.invalidRecords ?? 0),
+    invalidRecords: Math.max(base.invalidRecords, run.invalidRecords ?? 0),
     truncatedResponses: base.truncatedResponses + (run.truncated ? 1 : 0),
     unrecognisedPhases: phases,
     slowAttempts: base.slowAttempts + ((run.durationMs ?? 0) > SLOW_FETCH_MS ? 1 : 0),
@@ -78,7 +80,7 @@ function linesFor(source: AlertSource, signals: IngestSignals): string[] {
   if (signals.slowAttempts >= MIN_SLOW_ATTEMPTS_TO_REPORT) {
     lines.push(`${name}: ${signals.slowAttempts} slow upstream responses (over ${SLOW_FETCH_MS / 1_000} s)`);
   }
-  if (signals.invalidRecords > 0) lines.push(`${name}: ${signals.invalidRecords} records dropped as unreadable`);
+  if (signals.invalidRecords > 0) lines.push(`${name}: up to ${signals.invalidRecords} records per run dropped as unreadable`);
   if (signals.truncatedResponses > 0) lines.push(`${name}: ${signals.truncatedResponses} truncated responses (records may be missing)`);
   if (signals.unrecognisedPhases.length > 0) {
     lines.push(`${name}: unrecognised phase labels: ${signals.unrecognisedPhases.map(safeLabel).join(", ")}`);
