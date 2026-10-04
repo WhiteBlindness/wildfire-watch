@@ -6,7 +6,9 @@
  *   - server.arcgisonline.com: Esri World Imagery raster tiles;
  *   - api.open-meteo.com: model weather for the selected detection (see src/lib/weather/open-meteo.ts).
  * Every other request goes to this origin. MapLibre loads tiles with fetch()
- * and decodes them in blob: workers, hence connect-src and worker-src blob:.
+ * (connect-src) and decodes them in a module worker served from this origin
+ * (public/maplibre/), so workers need no blob: source. Decoded images may
+ * still be drawn from blob: and data: URLs (img-src).
  *
  * 'unsafe-inline' remains in script-src because Next.js inlines its bootstrap
  * and RSC payload scripts in statically rendered pages, which cannot carry a
@@ -35,8 +37,8 @@ export function contentSecurityPolicy({ development = false }: { development?: b
     "img-src": ["'self'", "data:", "blob:"],
     "font-src": ["'self'"],
     "connect-src": ["'self'", ...MAP_TILE_ORIGINS, WEATHER_ORIGIN],
-    "worker-src": ["'self'", "blob:"],
-    "child-src": ["blob:"],
+    "worker-src": ["'self'"],
+    "frame-src": ["'none'"],
     "manifest-src": ["'self'"],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],

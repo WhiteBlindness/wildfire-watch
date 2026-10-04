@@ -1,4 +1,6 @@
 import type { Page, Route } from "@playwright/test";
+import { BASEMAP_STYLE } from "./basemap-style";
+import { solidPng } from "./png";
 
 /**
  * Browser-side stand-ins for every third-party host and for the Worker routes
@@ -7,16 +9,9 @@ import type { Page, Route } from "@playwright/test";
  * production.
  */
 
-// A transparent 1x1 PNG.
-const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
-
-const MINIMAL_STYLE = {
-  version: 8,
-  name: "e2e",
-  glyphs: "https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf",
-  sources: {},
-  layers: [{ id: "background", type: "background", paint: { "background-color": "#0f172a" } }],
-};
+/** Every satellite tile is this flat colour, so imagery is easy to find in a screenshot. */
+export const SATELLITE_TILE_COLOUR = [46, 139, 87] as const;
+const SATELLITE_TILE = solidPng(256, SATELLITE_TILE_COLOUR);
 
 export const OPEN_METEO_CURRENT = {
   time: "2026-10-02T12:00",
@@ -40,12 +35,12 @@ export async function stubThirdParties(page: Page): Promise<StubLog> {
   const log: StubLog = { thirdPartyHosts: new Set() };
   const note = (route: Route) => log.thirdPartyHosts.add(new URL(route.request().url()).hostname);
 
-  await page.route("https://basemaps.cartocdn.com/**", (route) => { note(route); return json(route, MINIMAL_STYLE); });
+  await page.route("https://basemaps.cartocdn.com/**", (route) => { note(route); return json(route, BASEMAP_STYLE); });
   await page.route("https://*.basemaps.cartocdn.com/**", (route) => {
     note(route);
     return route.fulfill({ status: 200, contentType: "application/x-protobuf", body: Buffer.alloc(0) });
   });
-  await page.route("https://server.arcgisonline.com/**", (route) => { note(route); return route.fulfill({ status: 200, contentType: "image/png", body: PNG }); });
+  await page.route("https://server.arcgisonline.com/**", (route) => { note(route); return route.fulfill({ status: 200, contentType: "image/png", body: SATELLITE_TILE }); });
   await page.route("https://api.open-meteo.com/**", (route) => { note(route); return json(route, { current: OPEN_METEO_CURRENT }); });
 
   // Worker routes that call third parties from the server.
