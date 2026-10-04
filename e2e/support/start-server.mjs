@@ -5,22 +5,48 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { build } from "esbuild";
 import { buildHealthyIngest, buildSnapshot } from "./synthetic-feed.mjs";
 
 const PORT = process.env.E2E_PORT ?? "8788";
 const STATE_DIR = path.join(".wrangler", "e2e-state");
 const SNAPSHOT_KEY = "active-fires:v1";
 const HEALTH_KEY = "active-fires:ingest-health:v1";
+const INCIDENTS_KEY = "operational-incidents:v1";
+const INCIDENTS_HEALTH_KEY = "operational-incidents:ingest-health:v1";
 
 if (!existsSync(path.join(".open-next", "worker.js"))) {
   console.error("No OpenNext build found. Run `npm run build:cloudflare` first.");
   process.exit(1);
 }
 
-const snapshot = buildSnapshot(Date.now());
-const health = buildHealthyIngest(snapshot);
 const fixtureDir = mkdtempSync(path.join(tmpdir(), "wildfire-watch-e2e-"));
-const files = { [SNAPSHOT_KEY]: snapshot, [HEALTH_KEY]: health };
+
+// The operational fixture runs the app's own TypeScript parser and
+// reconciliation; esbuild bundles it (resolving the "@/" alias) for Node.
+const operationalModule = path.join(fixtureDir, "operational-feed.mjs");
+await build({
+  entryPoints: [path.join("e2e", "support", "operational-feed.ts")],
+  outfile: operationalModule,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node22",
+  logLevel: "warning",
+});
+const { buildOperationalSnapshot } = await import(pathToFileURL(operationalModule).href);
+
+const now = Date.now();
+const snapshot = buildSnapshot(now);
+const health = buildHealthyIngest(snapshot);
+const operational = buildOperationalSnapshot(now, snapshot);
+const files = {
+  [SNAPSHOT_KEY]: snapshot,
+  [HEALTH_KEY]: health,
+  [INCIDENTS_KEY]: operational.snapshot,
+  [INCIDENTS_HEALTH_KEY]: operational.health,
+};
 
 rmSync(STATE_DIR, { recursive: true, force: true });
 for (const [key, value] of Object.entries(files)) {

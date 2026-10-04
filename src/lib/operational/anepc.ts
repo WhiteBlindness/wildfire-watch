@@ -59,7 +59,7 @@ export interface AnepcParseResult {
   /** Same meaning as the FIRMS counts: rows returned, rural-fire rows, incidents kept. */
   counts: { sourceRows: number; filteredRows: number; selectedPoints: number };
   quality: {
-    /** Rural-fire records dropped because a required field was missing or implausible. */
+    /** Rural-fire records dropped because a required field was missing or out of range. */
     invalidRecords: number;
     duplicateRecords: number;
     /** Phase labels the mapping did not recognise, kept verbatim (a sign the source changed). */

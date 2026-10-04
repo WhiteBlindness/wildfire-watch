@@ -95,9 +95,11 @@ test("selects a detection from the keyboard and explains what is known about it"
 
   await expect(page.getByRole("heading", { name: pt.fireDetail.pointTitle })).toBeVisible();
 
+  // The satellite reports heat only; the status comes from the official occurrence it is linked to.
   const status = page.getByTestId("operational-status");
-  await expect(status).toContainText(pt.operationalStatus.unknown);
-  await expect(status).toContainText(pt.fireDetail.operationalUnknownNote);
+  await expect(status).toContainText(pt.operational.phase.in_progress);
+  await expect(status).toContainText(pt.operational.reportedBy);
+  await expect(status.getByTestId("operational-detail")).toHaveAttribute("data-state", "matched");
 
   const observation = page.getByRole("region", { name: pt.fireDetail.satelliteTelemetryTitle });
   await expect(observation).toContainText("912,4 MW");
