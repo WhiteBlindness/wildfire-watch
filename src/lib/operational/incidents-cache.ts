@@ -44,6 +44,13 @@ function isTimestamp(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
+/**
+ * The shape of the ISO times the FIRMS ingest writes. Cheaper than Date.parse
+ * for thousands of index entries; a time that matches but does not parse is
+ * never a candidate in the reconciliation.
+ */
+const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z$/;
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -150,7 +157,7 @@ export function readFusionIndex(raw: unknown): { firmsGeneratedAt: string; obser
   for (const entry of raw.points) {
     if (!Array.isArray(entry) || entry.length !== 5) continue;
     const [id, lat, lng, acquiredAt, frpMw] = entry as unknown[];
-    if (typeof id !== "string" || !isFiniteNumber(lat) || !isFiniteNumber(lng) || !isTimestamp(acquiredAt) || !isFiniteNumber(frpMw)) continue;
+    if (typeof id !== "string" || !isFiniteNumber(lat) || !isFiniteNumber(lng) || typeof acquiredAt !== "string" || !ISO_UTC.test(acquiredAt) || !isFiniteNumber(frpMw)) continue;
     observations.push({ id, location: { lat, lng }, acquiredAt, frpMw });
   }
   return { firmsGeneratedAt: raw.firmsGeneratedAt, observations };

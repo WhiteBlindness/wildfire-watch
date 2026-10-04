@@ -96,4 +96,6 @@ test("the fusion index keeps only detections inside the operational source's cov
   });
   assert.equal(readFusionIndex({ version: 1, points: [] }), null);
   assert.deepEqual(readFusionIndex({ ...index, points: [["bad", "x", 0, "", 1], ...index.points] })?.observations.length, 2);
+  // A time that is not an ISO UTC timestamp is dropped as well.
+  assert.deepEqual(readFusionIndex({ ...index, points: [["bad-time", 40, -8, "12/08/2026 13:00", 1], ...index.points] })?.observations.length, 2);
 });

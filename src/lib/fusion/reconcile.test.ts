@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { OperationalIncident } from "@/lib/wildfire/types";
+import { haversineKm } from "@/lib/geo/distance";
 import { MATCH_RULES, reconcile, type FusionObservation } from "./reconcile";
 
 const NOW = Date.parse("2026-08-12T15:00:00Z");
@@ -124,4 +125,63 @@ test("the result does not depend on input order and ignores duplicate observatio
   const forward = reconcile(incidents, observations, NOW);
   const reversed = reconcile([...incidents].reverse(), [...observations, observations[0]].reverse(), NOW);
   assert.deepEqual(reversed, forward);
+});
+
+test("the spatial index changes nothing: the result equals comparing every pair", () => {
+  // A deterministic generator, so a failure is reproducible.
+  let seed = 7;
+  const random = () => {
+    seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+    return seed / 2_147_483_648;
+  };
+  // Clusters near Portugal, a high latitude and both sides of the antimeridian,
+  // where cells wrap and longitude degrees are short.
+  const centres = [
+    { lat: 40.2, lng: -8.05, spreadDeg: 0.4 },
+    { lat: 37.3, lng: -8.55, spreadDeg: 0.4 },
+    { lat: 68.5, lng: 20.1, spreadDeg: 0.4 },
+    { lat: -16.9, lng: 180, spreadDeg: 0.1 },
+  ];
+  const near = (centre: (typeof centres)[number], scale: number) => {
+    const lng = centre.lng + (random() - 0.5) * centre.spreadDeg * scale;
+    return { lat: centre.lat + (random() - 0.5) * centre.spreadDeg * scale, lng: lng > 180 ? lng - 360 : lng };
+  };
+  const incidents: OperationalIncident[] = [];
+  const observations: FusionObservation[] = [];
+  for (const [index, centre] of centres.entries()) {
+    for (let i = 0; i < 25; i++) {
+      incidents.push({ ...incident(`${index}-${i}`, {}, random() * 30), location: near(centre, 1) });
+    }
+    for (let i = 0; i < 150; i++) {
+      observations.push({ ...detection(`d-${index}-${i}`, {}, random() * 40, Math.round(random() * 500)), location: near(centre, 1.25) });
+    }
+  }
+
+  // The rules applied to every pair, with no index.
+  const bruteForce = new Map<string, Array<{ id: string; km: number }>>();
+  for (const observation of observations) {
+    const candidates = incidents
+      .filter((entry) => Date.parse(observation.acquiredAt) >= Date.parse(entry.startedAt) - MATCH_RULES.preReportWindowHours * HOUR)
+      .map((entry) => ({ id: entry.id, km: haversineKm(observation.location, entry.location) }))
+      .filter((entry) => entry.km <= MATCH_RULES.matchRadiusKm)
+      .sort((a, b) => a.km - b.km || (a.id < b.id ? -1 : 1));
+    if (candidates.length > 0) bruteForce.set(observation.id, candidates);
+  }
+
+  const result = reconcile(incidents, observations, NOW);
+  assert.ok(result.detections.length > 100, "the fixture produces plenty of candidates");
+  assert.ok(result.detections.some((match) => match.status === "ambiguous"), "and some ambiguous ones");
+  assert.ok(
+    result.detections.some((match) => {
+      const detectionLng = observations.find((entry) => entry.id === match.detectionId)!.location.lng;
+      return match.incidentIds.some((id) => Math.sign(incidents.find((entry) => entry.id === id)!.location.lng) !== Math.sign(detectionLng));
+    }),
+    "and some links across the antimeridian",
+  );
+  assert.deepEqual(result.detections.map((match) => match.detectionId), [...bruteForce.keys()].sort());
+  for (const match of result.detections) {
+    const candidates = bruteForce.get(match.detectionId)!;
+    const close = candidates.filter((entry) => entry.km - candidates[0].km <= MATCH_RULES.ambiguityMarginKm);
+    assert.deepEqual(match.incidentIds, (close.length > 1 ? close : [candidates[0]]).map((entry) => entry.id), match.detectionId);
+  }
 });
