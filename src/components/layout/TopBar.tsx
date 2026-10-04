@@ -2,7 +2,14 @@ import ThemeToggle from "@/components/ui/ThemeToggle";
 import LanguageToggle from "@/components/ui/LanguageToggle";
 import BasemapToggle, { type BasemapMode } from "@/components/ui/BasemapToggle";
 
-export default function TopBar({ basemapMode, onBasemapChange }: { basemapMode: BasemapMode; onBasemapChange: (mode: BasemapMode) => void }) {
+interface TopBarProps {
+  basemapMode: BasemapMode;
+  onBasemapChange: (mode: BasemapMode) => void;
+  /** The basemap switch only changes the map; it is hidden when the map cannot be drawn. */
+  showBasemapToggle?: boolean;
+}
+
+export default function TopBar({ basemapMode, onBasemapChange, showBasemapToggle = true }: TopBarProps) {
   return (
     <header className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-center justify-between p-3 md:p-4">
       <div className="mission-brand-chip pointer-events-auto flex h-11 w-11 items-center justify-center gap-2 rounded-full border border-neutral-200 bg-white/90 shadow-lg backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-900/90">
@@ -12,7 +19,7 @@ export default function TopBar({ basemapMode, onBasemapChange }: { basemapMode: 
         </h1>
       </div>
       <div className="mission-top-controls pointer-events-auto flex items-center gap-2">
-        <BasemapToggle mode={basemapMode} onChange={onBasemapChange} />
+        {showBasemapToggle && <BasemapToggle mode={basemapMode} onChange={onBasemapChange} />}
         <LanguageToggle />
         <ThemeToggle />
       </div>

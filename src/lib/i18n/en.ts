@@ -58,7 +58,13 @@ const en = {
     loadingLabel: "Loading FIRMS data…",
     errorTitle: "FIRMS data could not be loaded",
     errorDescription: "The map is available, but the FIRMS detections were not loaded.",
+    errorDescriptionWithoutMap: "The FIRMS detections were not loaded.",
     retryLabel: "Retry",
+    unavailableTitle: "Interactive map unavailable",
+    unavailableDescription: "This browser or device cannot draw the map, because it does not provide WebGL2.",
+    unavailableDataNote: "The data is not affected: the detections and their details are still available in the panel.",
+    unavailableHint: "You can try another browser, or turn on hardware acceleration in your browser's settings.",
+    unavailableShowList: "Show the detections in the panel",
   },
   timeline: {
     controlLabel: "Detection timeline",

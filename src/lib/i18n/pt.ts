@@ -58,7 +58,13 @@ const pt: Dictionary = {
     loadingLabel: "A carregar dados FIRMS…",
     errorTitle: "Não foi possível carregar os dados FIRMS",
     errorDescription: "O mapa está disponível, mas as deteções FIRMS não foram carregadas.",
+    errorDescriptionWithoutMap: "As deteções FIRMS não foram carregadas.",
     retryLabel: "Tentar novamente",
+    unavailableTitle: "Mapa interativo indisponível",
+    unavailableDescription: "Este navegador ou dispositivo não consegue desenhar o mapa, porque não disponibiliza WebGL2.",
+    unavailableDataNote: "Os dados não estão em causa: as deteções e os respetivos detalhes continuam disponíveis no painel.",
+    unavailableHint: "Pode experimentar outro navegador ou ativar a aceleração por hardware nas definições do navegador.",
+    unavailableShowList: "Ver as deteções no painel",
   },
   timeline: {
     controlLabel: "Cronologia das deteções",

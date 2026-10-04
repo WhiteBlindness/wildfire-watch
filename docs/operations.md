@@ -110,7 +110,7 @@ Error logs record error names and HTTP statuses only: a fetch error message can 
 
 **MapLibre.** The map uses MapLibre GL JS 6, which fixes GHSA-jrc7-96c5-q579 (an XSS bypass in the sanitiser MapLibre applies to attribution and popup HTML, fixed in 6.4.1). Version 6 runs its tile worker as an ES module from this origin: `scripts/copy-maplibre-worker.mjs` copies `maplibre-gl-worker.mjs` and `maplibre-gl-shared.mjs` into `public/maplibre/` before every `dev` and `build`, and `FireMap` points `setWorkerUrl` at them. The policy therefore allows workers from `'self'` only, with no `blob:` workers. The copied files are build output and are not committed.
 
-MapLibre 6 needs WebGL2. In a browser without it the map cannot start: the panel, the detection list and the detection details still work, but the map area keeps its loading state.
+MapLibre 6 needs WebGL2. When the browser or device cannot create a WebGL2 context, MapLibre throws a `GPUInitializationError`; the app catches it once (no retries, no console error), replaces the loading state with a notice in the map area, and hides the map-only controls (basemap switch, timeline, legend). The notice is about the map renderer, not the data: the panel, the detection list, the detection details and the legal pages keep working. `e2e/map-unavailable.spec.ts` runs Chromium with WebGL2 disabled to cover this.
 
 **CARTO key.** CARTO requires an API key on basemap requests. The free key is configured in GitHub as `CARTO_API_KEY`; the production build passes it as `NEXT_PUBLIC_CARTO_API_KEY` and the map adds it to CARTO URLs only. The key ends up in the public JavaScript bundle and in every tile request, so it is not a secret, but it is kept out of logs where possible:
 

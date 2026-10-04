@@ -71,6 +71,7 @@ test("MapLibre draws imagery, recoloured water and detections, and keeps them th
 
   // Satellite mode is the default: imagery visible, provider water hidden, detections on top.
   await expectMapColours(page, { satellite: "present", water: null });
+  await expect(page.getByTestId("map-unavailable"), "WebGL2 is available, so no fallback").toHaveCount(0);
   for (const file of ["/maplibre/maplibre-gl-worker.mjs", "/maplibre/maplibre-gl-shared.mjs"]) {
     expect(workerFiles.get(file)?.status, file).toBe(200);
     expect(workerFiles.get(file)?.type, file).toMatch(/javascript/);
