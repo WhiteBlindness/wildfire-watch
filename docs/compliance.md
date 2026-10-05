@@ -1,6 +1,6 @@
 # Legal, compliance and third-party review
 
-Engineering due diligence, not legal advice. It records what WildfireWatch does about each obligation that could plausibly apply, what was checked, and what is left for the owner to decide. It does not claim that the site is fully compliant with any law. Last reviewed on 03/10/2026.
+Engineering due diligence, not legal advice. It records what WildfireWatch does about each obligation that could plausibly apply, what was checked, and what is left for the owner to decide. It does not claim that the site is fully compliant with any law, and it is not a legal certification. Last reviewed on 04/10/2026.
 
 **Context.** WildfireWatch is a free, non-commercial personal portfolio project operated from Portugal. It has no accounts, forms, payments, reviews, advertising or analytics. It stores two interface preferences in the visitor's browser. It is hosted on Cloudflare Workers.
 
@@ -19,12 +19,12 @@ Engineering due diligence, not legal advice. It records what WildfireWatch does 
 | Cookie consent | NOT APPLICABLE | No cookies. The two preferences are stored only when the visitor chooses them, for a service they asked for, which is exempt from consent under Lei 41/2004, art. 5. A consent banner would be needed before any analytics or advertising. |
 | Tracking disclosure | IMPLEMENTED | No trackers (static test forbids them). Direct browser requests to CARTO, Esri and Open-Meteo are disclosed with what each receives. |
 | Form consent | NOT APPLICABLE | The site has no forms. Contact goes through GitHub issues. |
-| Data minimisation | IMPLEMENTED | No visitor identifiers are used for rate limiting; coordinates are rounded before reaching Nominatim and OpenAQ; logs record error names, not URLs or messages; operator alerts carry no visitor data. |
+| Data minimisation | IMPLEMENTED | No visitor identifiers are used for rate limiting; coordinates are rounded before reaching Nominatim and OpenAQ; logs record error names, not URLs or messages; operator alerts and the daily summary carry no visitor data; the street address of ANEPC occurrences is never stored or served. |
 | Operator / contact information | OWNER DECISION | The policy names the maintainer by the pseudonym "WhiteBlindness" and gives GitHub issues as the contact. GDPR art. 13(1)(a) asks for the controller's identity and contact details. The owner has decided to keep the pseudonymous identity and accepts the residual risk; see owner decisions. |
 | Local laws | IMPLEMENTED | GDPR and Lei 58/2019 (privacy notice), Lei 41/2004 (storage), unofficial-source notice with 112. DL 7/2004 identification duties and the Livro de Reclamações do not apply to a non-commercial site with no consumer service (see research). |
 | Third-party services / embeds | IMPLEMENTED | No iframes or third-party scripts. Third-party requests are listed in the policy and enforced by the Content Security Policy. Provider-specific findings are below. |
-| Copyright, image and data rights | IMPLEMENTED | Attributions for NASA FIRMS, CARTO and OpenStreetMap, Esri, Nominatim, Open-Meteo (CC BY 4.0), OpenAQ, news publishers and fonts on `/sobre`. News shows headline and link only. |
-| Unsupported product claims | IMPLEMENTED | Detections are no longer called active fires or graded by severity; operational status is "unknown"; the overview no longer extrapolates a burned area; the per-detection estimate states its method; the news note no longer claims coverage starts at the first detection. A static test keeps "severity" out of the model and copy. |
+| Copyright, image and data rights | IMPLEMENTED | Attributions for NASA FIRMS, ANEPC (CC BY 4.0, with the changes made), CARTO and OpenStreetMap, Esri, Nominatim, Open-Meteo (CC BY 4.0), OpenAQ, news publishers and fonts on `/sobre`; the ANEPC attribution is repeated in every occurrence panel. News shows headline and link only. The ANEPC licensing question is below. |
+| Unsupported product claims | IMPLEMENTED | Detections are no longer called active fires or graded by severity; operational status comes only from ANEPC, labelled "reported by ANEPC", and is "unknown" everywhere else; links between sources follow published fixed rules, with no probability presented as fact; the overview no longer extrapolates a burned area; the per-detection estimate states its method; the news note no longer claims coverage starts at the first detection. A static test keeps "severity" out of the model and copy. |
 | Fake reviews | NOT APPLICABLE | No reviews or testimonials. |
 | Refund policy | NOT APPLICABLE | Nothing is sold. |
 | Business identity / details | NOT APPLICABLE | No economic activity today. Becomes required with advertising or paid services (see commercialisation). |
@@ -59,7 +59,25 @@ Sources were searched on 02/10/2026. Several official sites (EUR-Lex, Diário da
 | Nominatim (OpenStreetMap) | Place names | Server | None; identifying User-Agent required | 1 request/second for the whole application; caching required | Acceptable | Throttling is per isolate, not global; rounding to 2 km and edge caching keep real traffic far below the limit. |
 | Google News RSS | Related headlines | Server | None (no official API) | Undocumented | Grey area: terms reserve the service for use through its own interface | Feeds can be blocked at any time; the panel degrades to "news unavailable". |
 | Bing News RSS (fallback) | Related headlines | Server | None | Undocumented | Grey area: Microsoft terms limit Bing content to personal, non-commercial use | Same as Google. The Bing News Search API was retired in 2025. |
+| ANEPC open occurrences (ArcGIS Online feature layer `OcorrenciasSite`) | Official rural-fire occurrences, mainland Portugal | Server (cron every 15 min) | None | Not documented; one request per run (96/day) | Acceptable for personal, non-commercial use with attribution (see below) | Not a contracted API: the feed was unavailable for months in 2024–2025 and for eight weeks in 2026, and moved host and schema in March 2026. Live reachability, fields and licence page **UNVERIFIED** from the build environment; a live check is a merge condition. |
+| EFFIS (Copernicus) | Not used | n/a | n/a | n/a | n/a | Evaluated and left out: its active-fire layers republish NASA FIRMS; its burnt-area WFS showed hangs, 503 errors, swapped axes and very large payloads in 2026. |
 | Cloudflare Workers, KV | Hosting, storage | Server | Account | Free plan (see [operations.md](./operations.md)) | Acceptable | Workers Logs keep request data for 3 days on Free today and up to 7 days from 01/12/2026; the policy says "up to 7 days". |
+
+## Operational data (ANEPC)
+
+Sources were searched on 04/10/2026. Every ANEPC, dados.gov.pt and SGIFR host was blocked from the research environment, so the findings below rest on search-engine summaries of the official pages and on the code of open-source projects that read the same layer. Each is marked accordingly and must be re-read on the live page before merging.
+
+| Regime | What it says | Applies to WildfireWatch? | Confidence |
+|---|---|---|---|
+| dados.gov.pt dataset "ProCiv – Ocorrências em aberto", published by ANEPC | Licensed CC BY 4.0: reuse, including redistribution, with credit and an indication of changes | Yes, if the layer WildfireWatch reads is that dataset's resource (likely, since the dataset is described as the feed behind the public map; **not verified**) | Medium (search summary; repeated by an independent reuser on 28/09/2026) |
+| ANEPC website legal notice | Information may be copied and used for personal or public purposes without profit or offensive purpose, citing the source | Yes: WildfireWatch is personal, non-commercial and cites ANEPC | Medium (search summary) |
+| SGIFR / SIFOR terms (`api.sgifr.gov.pt`) | No commercial use; no reproduction or publication without written consent, except information marked public; a fixed attribution string | No: WildfireWatch does not read the SGIFR host | Medium (search summary of the Portuguese text) |
+
+**What WildfireWatch does.** It reads the ArcGIS Online layer, not the SGIFR gateway; keeps rural fires only; drops the street address; shows each occurrence with "Fonte: ANEPC — Autoridade Nacional de Emergência e Proteção Civil (dados.gov.pt, CC BY 4.0)", states the changes on `/sobre`, says ANEPC does not endorse the project, and labels every phase "reported by ANEPC". It stores only the current snapshot, publishes no archive and commits no raw data to the repository.
+
+**Residual risk.** The CC BY 4.0 listing and ANEPC's own notice point the same way for a personal, non-commercial site that credits the source. The open questions are whether this exact layer is the dataset's resource and whether the licence text still reads as summarised; both are part of the live check in [operations.md](./operations.md#before-the-first-deploy). An optional, stronger step, for the owner only, is to ask ANEPC (`geral@prociv.pt`) in writing; nothing here depends on it.
+
+**Safety wording.** The occurrence list is not an alert channel and arrives minutes late. Every occurrence panel says that WildfireWatch is not an official channel and to call 112 and follow Civil Protection instructions in an emergency.
 
 ## Commercialisation blockers / changes required later
 
@@ -74,10 +92,14 @@ Commercialisation is not a current goal. If advertising, sponsorship or paid fea
 7. **Nominatim.** Heavy or commercial use should move to a paid geocoder or a self-hosted instance.
 8. **OpenAQ.** Check each data provider's licence flags (`commercialUseAllowed`) and OpenAQ's paid terms for higher rates.
 9. **NASA FIRMS.** No restriction found; keep the acknowledgement.
+10. **ANEPC.** CC BY 4.0 would allow commercial reuse, but ANEPC's own website notice allows reuse only without profit, and the SGIFR terms exclude commercial use. Ask ANEPC in writing before any commercial use.
 
 ## Owner decisions
 
-Recorded on 03/10/2026.
+Recorded on 03/10/2026 and 04/10/2026.
 
 1. **Controller identity: keep the pseudonym.** The site keeps naming the controller as "WhiteBlindness" with GitHub issues as the contact channel, and publishes no legal name, email address or postal address. Publishing a legal name and a private contact channel would most likely satisfy GDPR art. 13(1)(a) more fully; the owner accepts the residual compliance risk of a pseudonymous controller for as long as WildfireWatch stays personal and non-commercial, with no accounts, forms, analytics, advertising or payments. This is an owner decision, not a finding that the pseudonymous identity is legally sufficient. It must be revisited before any of those conditions change.
 2. **CARTO basemaps: free key, no paid plan.** A free CARTO Basemaps key is configured for production builds. The key is public by design, because it travels in every browser request to CARTO, but it is kept out of CI logs where possible (see [operations.md](./operations.md)). Commercial use would need CARTO's commercial tier (see above).
+3. **Personal and non-commercial; zero cost.** WildfireWatch stays a personal, non-commercial project. No paid Cloudflare feature is enabled. Commercialisation remains deferred (see the blockers above).
+4. **Second source chosen on technical merit.** ANEPC was chosen because it is the only candidate that adds what FIRMS cannot (an authority's phase and resources) with a light, standard query; EFFIS was left out because it duplicates FIRMS or was unreliable, not because of where either is based.
+5. **Telegram is the active alert channel.** Discord remains supported and optional. Neither is required for the site to run.

@@ -14,7 +14,9 @@
     }
   ],
   "triggers": {
-    "crons": ["0 * * * *"]
+    // Hourly: FIRMS, then ANEPC and the daily summary. Quarter-hourly: ANEPC only.
+    // Keep in step with FIRMS_CRON and OPERATIONAL_CRON in workers/scheduled.ts.
+    "crons": ["0 * * * *", "15,30,45 * * * *"]
   },
   "observability": {
     "enabled": true
