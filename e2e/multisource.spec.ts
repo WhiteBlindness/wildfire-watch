@@ -4,6 +4,7 @@ import { interpolate } from "../src/lib/i18n/dictionaries";
 import en from "../src/lib/i18n/en";
 import pt from "../src/lib/i18n/pt";
 import { stubThirdParties, watchCspViolations } from "./support/stubs";
+import { waitForServer } from "./support/server";
 
 // Satellite detections (FIRMS) and official occurrences (ANEPC) together, from
 // the synthetic snapshots seeded by e2e/support/start-server.mjs. The ANEPC
@@ -18,6 +19,8 @@ const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 let cspViolations: string[] = [];
 let runtimeErrors: string[] = [];
 let expectedConsoleErrors: RegExp[] = [];
+
+test.beforeEach(async ({ request }, testInfo) => waitForServer(request, testInfo));
 
 test.beforeEach(async ({ page }) => {
   runtimeErrors = [];

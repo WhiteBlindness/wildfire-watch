@@ -3,11 +3,14 @@ import AxeBuilder from "@axe-core/playwright";
 import en from "../src/lib/i18n/en";
 import pt from "../src/lib/i18n/pt";
 import { rewriteFeed, stubThirdParties, watchCspViolations } from "./support/stubs";
+import { waitForServer } from "./support/server";
 
 const MINUTE = 60_000;
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 let cspViolations: string[] = [];
+
+test.beforeEach(async ({ request }, testInfo) => waitForServer(request, testInfo));
 
 test.beforeEach(async ({ page }) => {
   cspViolations = await watchCspViolations(page);

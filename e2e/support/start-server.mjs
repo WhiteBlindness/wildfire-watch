@@ -57,14 +57,42 @@ for (const [key, value] of Object.entries(files)) {
 }
 rmSync(fixtureDir, { recursive: true, force: true });
 
-const server = spawn("npx", [
-  "wrangler", "dev",
-  "--ip=127.0.0.1",
-  `--port=${PORT}`,
-  `--persist-to=${STATE_DIR}`,
-  "--log-level=warn",
-  "--show-interactive-dev-session=false",
-], { stdio: "inherit" });
+// `wrangler dev` occasionally exits mid-run when its local proxy loses the
+// connection to the Worker ("Error inside ProxyWorker: Network connection
+// lost"), on branches with and without app changes. It is restarted with the
+// same seeded state, so one lost connection costs the test attempt in flight,
+// not every test after it; e2e/support/server.ts makes the next test wait for
+// the restart. Each restart is logged, and repeated exits still fail the run.
+const MAX_RESTARTS = 3;
+let restarts = 0;
+let stopping = false;
+let server;
 
-for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => server.kill(signal));
-server.on("exit", (code) => process.exit(code ?? 0));
+function startServer() {
+  server = spawn("npx", [
+    "wrangler", "dev",
+    "--ip=127.0.0.1",
+    `--port=${PORT}`,
+    `--persist-to=${STATE_DIR}`,
+    "--log-level=warn",
+    "--show-interactive-dev-session=false",
+  ], { stdio: "inherit" });
+  server.on("exit", (code, signal) => {
+    if (stopping) process.exit(code ?? 0);
+    if (restarts >= MAX_RESTARTS) {
+      console.error(`wrangler dev exited (${signal ?? code}) after ${MAX_RESTARTS} restarts; giving up.`);
+      process.exit(code || 1);
+    }
+    restarts += 1;
+    console.error(`wrangler dev exited (${signal ?? code}); restarting (${restarts}/${MAX_RESTARTS}).`);
+    startServer();
+  });
+}
+
+startServer();
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    stopping = true;
+    server.kill(signal);
+  });
+}
